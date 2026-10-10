@@ -1,0 +1,59 @@
+name: Bootstrap project files
+
+on:
+  push:
+    paths:
+      - ".bootstrap/PS5-PFS-Packager-GitHub-v2.13.0.zip.b64"
+      - ".github/workflows/bootstrap-expand.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  expand:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Expand repository package
+        shell: bash
+        run: |
+          set -euo pipefail
+          PAYLOAD=".bootstrap/PS5-PFS-Packager-GitHub-v2.13.0.zip.b64"
+          if [ ! -f "$PAYLOAD" ]; then
+            echo "Bootstrap payload not found; nothing to do."
+            exit 0
+          fi
+
+          python3 - <<'PY'
+          import base64
+          from pathlib import Path
+          src = Path('.bootstrap/PS5-PFS-Packager-GitHub-v2.13.0.zip.b64')
+          data = ''.join(src.read_text(encoding='ascii').split())
+          Path('/tmp/ps5-pfs-packager.zip').write_bytes(base64.b64decode(data))
+          PY
+
+          rm -rf /tmp/ps5-pfs-packager
+          mkdir -p /tmp/ps5-pfs-packager
+          unzip -q /tmp/ps5-pfs-packager.zip -d /tmp/ps5-pfs-packager
+
+          if [ -d /tmp/ps5-pfs-packager/PS5-PFS-Packager ]; then
+            SRC=/tmp/ps5-pfs-packager/PS5-PFS-Packager
+          else
+            SRC=/tmp/ps5-pfs-packager
+          fi
+
+          shopt -s dotglob
+          cp -a "$SRC"/. .
+          rm -rf .bootstrap
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Add PS5 PFS Packager v2.13.0 project files" || exit 0
+          git push
