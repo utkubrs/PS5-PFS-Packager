@@ -1,0 +1,25 @@
+name: Feature request
+description: Suggest an improvement
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    attributes:
+      label: Problem
+      description: What workflow is difficult today?
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Proposed solution
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Alternatives
+  - type: checkboxes
+    attributes:
+      label: Scope
+      options:
+        - label: This request does not require copyrighted games, keys, firmware or proprietary files.
+          required: true
