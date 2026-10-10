@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - ".bootstrap/PS5-PFS-Packager-GitHub-v2.13.0.zip.b64"
+      - "bootstrap/PS5-PFS-Packager-GitHub-v2.13.0.zip.b64"
       - ".github/workflows/bootstrap-expand.yml"
   workflow_dispatch:
 
@@ -26,14 +27,21 @@ jobs:
           set -euo pipefail
           PAYLOAD=".bootstrap/PS5-PFS-Packager-GitHub-v2.13.0.zip.b64"
           if [ ! -f "$PAYLOAD" ]; then
+            PAYLOAD="bootstrap/PS5-PFS-Packager-GitHub-v2.13.0.zip.b64"
+          fi
+          if [ ! -f "$PAYLOAD" ]; then
             echo "Bootstrap payload not found; nothing to do."
             exit 0
           fi
 
           python3 - <<'PY'
           import base64
+          import os
           from pathlib import Path
-          src = Path('.bootstrap/PS5-PFS-Packager-GitHub-v2.13.0.zip.b64')
+          payload = os.environ.get('PAYLOAD', '') or '.bootstrap/PS5-PFS-Packager-GitHub-v2.13.0.zip.b64'
+          src = Path(payload)
+          if not src.exists():
+              src = Path('bootstrap/PS5-PFS-Packager-GitHub-v2.13.0.zip.b64')
           data = ''.join(src.read_text(encoding='ascii').split())
           Path('/tmp/ps5-pfs-packager.zip').write_bytes(base64.b64decode(data))
           PY
@@ -50,7 +58,7 @@ jobs:
 
           shopt -s dotglob
           cp -a "$SRC"/. .
-          rm -rf .bootstrap
+          rm -rf .bootstrap bootstrap
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
