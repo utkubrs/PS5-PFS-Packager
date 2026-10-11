@@ -1,5 +1,5 @@
 name: Build and publish Windows package
-# v2.21.0 release build: one push-triggered run for workflow changes; manual thereafter.
+# v2.21.0 release build: hidden PKG extraction and platform auto-detection smoke build.
 
 on:
   push:
