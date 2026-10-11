@@ -58,8 +58,8 @@ echo [4/4] Building EXE with Nuitka...
   --product-name="PS5 PFS Packager" ^
   --company-name="PS5 PFS Packager Contributors" ^
   --copyright="GPL-3.0-or-later" ^
-  --file-version=2.13.0.0 ^
-  --product-version=2.13.0.0 ^
+  --file-version=2.14.0.0 ^
+  --product-version=2.14.0.0 ^
   src\ps5_pfs_packager.py
 
 if errorlevel 1 goto :error
