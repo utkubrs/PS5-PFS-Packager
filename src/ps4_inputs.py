@@ -34,9 +34,20 @@ def extract_pkg(source: str, temp_dir: str, log=None) -> str:
     source=Path(source).resolve()
     if source.suffix.lower() not in (".pkg",".fpkg") or not source.is_file():
         raise ValueError("Select an existing .pkg or .fpkg file")
-    tool=os.environ.get("PS4_PKG_EXTRACTOR") or shutil.which("pkgextract")
+    # Support portable placement beside the EXE or in a tools directory.
+    import sys
+    app_dir=Path(sys.executable).resolve().parent if getattr(sys,"frozen",False) or "__compiled__" in globals() else Path(__file__).resolve().parents[1]
+    candidates=[
+        os.environ.get("PS4_PKG_EXTRACTOR"),
+        str(app_dir/"pkgextract.exe"),
+        str(app_dir/"tools"/"pkgextract.exe"),
+        str(app_dir/"pkgextract"/"pkgextract.exe"),
+        shutil.which("pkgextract.exe"),
+        shutil.which("pkgextract"),
+    ]
+    tool=next((x for x in candidates if x and Path(x).is_file()),None)
     if not tool or not Path(tool).is_file():
-        raise RuntimeError("pkgextract.exe not found. Install it into PATH or set PS4_PKG_EXTRACTOR to its full path.")
+        raise RuntimeError("PKG extractor missing. Place pkgextract.exe beside PS5-PFS-Packager.exe, in its tools folder, or set PS4_PKG_EXTRACTOR.")
     base=Path(temp_dir).resolve()/"ps4_pkg_extract"
     base.mkdir(parents=True,exist_ok=True)
     folder=base/(re.sub(r"[^A-Za-z0-9_.-]","_",source.stem)[:80])
