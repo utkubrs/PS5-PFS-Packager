@@ -62,7 +62,7 @@ def detect_logical_cpu_count() -> int:
     except Exception:
         return 1
 
-APP_VERSION = "2.23"
+APP_VERSION = "2.24"
 APP_TITLE = "PS5 PFS Paketleyici"
 
 MKPFS_RELEASES_URL = "https://github.com/PSBrew/MkPFS/releases"
@@ -3611,6 +3611,7 @@ def run_internal_mkpfs(args: list[str]) -> int:
 from upgrade_features import inspect_game, validate_preflight, recommended_block_size
 from ps4_inputs import is_ps4_game_folder, detect_ps4_title_id, extract_pkg
 from ps4_merge import merge_ps4_folders, edit_sfo_title, sfo_fields
+from ps4_merge_i18n import merge_text
 
 class App(tk.Tk):
     def __init__(self):
@@ -6387,11 +6388,12 @@ class App(tk.Tk):
         """Merge an extracted game/update pair, optionally extracting selected PS4 PKGs."""
         self.platform_var.set("PS4")
         dlg = tk.Toplevel(self)
-        dlg.title("PS4 Oyun + Update Birleştir")
-        dlg.geometry("770x350")
+        mt = lambda key: merge_text(self.lang_code(), key)
+        dlg.title(mt("merge_title"))
+        dlg.geometry("850x510")
         dlg.configure(bg="#151515")
         entries = []
-        for caption in ("Ana oyun (.pkg / klasör)", "Update (.pkg / klasör)", "Oyun adı / TITLE (isteğe bağlı)"):
+        for caption in (mt("base"), mt("patch"), mt("title")):
             frame = tk.Frame(dlg, bg="#151515")
             frame.pack(fill="x", padx=15, pady=6)
             tk.Label(frame, text=caption, fg="white", bg="#151515",
@@ -6401,12 +6403,12 @@ class App(tk.Tk):
             if len(entries) < 2:
                 def browse(v=value):
                     selected = filedialog.askopenfilename(
-                        parent=dlg, title="PS4 PKG dosyası seç",
+                        parent=dlg, title=mt("pkg"),
                         filetypes=[("PS4 PKG", "*.pkg"), ("Tüm dosyalar", "*.*")])
                     if selected:
                         v.set(selected)
-                tk.Button(frame, text="PKG Seç", command=browse).pack(side="left", padx=3)
-                tk.Button(frame, text="Klasör", command=lambda v=value:
+                tk.Button(frame, text=mt("pkg"), command=browse).pack(side="left", padx=3)
+                tk.Button(frame, text=mt("folder"), command=lambda v=value:
                           v.set(filedialog.askdirectory(parent=dlg) or v.get())).pack(side="left")
             entries.append(value)
             if len(entries) == 1:
@@ -6416,27 +6418,60 @@ class App(tk.Tk):
                     if len(entries) >= 3 and not entries[2].get().strip():
                         entries[2].set(name.replace("_", " ").replace("-", " "))
                 value.trace_add("write", infer_title)
-        tk.Label(dlg, text="PKG çıkarımı ve birleşim seçili TEMP klasöründe yapılır. Ana oyun görselleri korunur.",
+        # Values are initialized from the main screen and synchronized when accepted.
+        settings = {
+            "output": tk.StringVar(value=self.output_dir_var.get()),
+            "filename": tk.StringVar(value=self.file_name_var.get()),
+            "temp": tk.StringVar(value=self.temp_dir_var.get()),
+        }
+        for name in ("output", "filename", "temp"):
+            frame = tk.Frame(dlg, bg="#151515")
+            frame.pack(fill="x", padx=15, pady=5)
+            tk.Label(frame, text=mt(name), fg="white", bg="#151515",
+                     width=29, anchor="w").pack(side="left")
+            tk.Entry(frame, textvariable=settings[name], width=52).pack(side="left", fill="x", expand=True)
+            if name != "filename":
+                tk.Button(frame, text=mt("browse"),
+                          command=lambda key=name: settings[key].set(
+                              filedialog.askdirectory(parent=dlg) or settings[key].get()
+                          )).pack(side="left", padx=3)
+        tk.Label(dlg, text=mt("note"),
                  bg="#151515", fg="#cbd5e1", wraplength=710).pack(pady=12)
-        status = tk.StringVar(value="Hazır")
+        status = tk.StringVar(value=mt("ready"))
         tk.Label(dlg, textvariable=status, bg="#151515", fg="#a7f3d0").pack(pady=4)
         def merge():
             if getattr(self, "_ps4_merge_busy", False):
                 return
             if str(self.platform_var.get()).upper() != "PS4":
-                messagebox.showerror("PS4", "Önce Platform = PS4 seçin.", parent=dlg)
+                messagebox.showerror("PS4", mt("platform_error"), parent=dlg)
                 return
             base, patch, title = (v.get().strip() for v in entries)
-            temp = normalize_path(self.temp_dir_var.get().strip())
+            temp = normalize_path(settings["temp"].get().strip())
             if not base or not patch or not os.path.isdir(temp):
-                messagebox.showerror("PS4", "Ana oyun, update ve mevcut TEMP klasörü gerekli.", parent=dlg)
+                messagebox.showerror("PS4", mt("required"), parent=dlg)
                 return
+            output_dir = normalize_path(settings["output"].get().strip())
+            output_name = settings["filename"].get().strip()
+            if not output_name or not output_name.lower().endswith(".ffpfsc"):
+                messagebox.showerror("PS4", mt("filename_error"), parent=dlg)
+                return
+            try:
+                os.makedirs(output_dir, exist_ok=True)
+                os.makedirs(temp, exist_ok=True)
+                if not os.path.isdir(output_dir) or not os.path.isdir(temp):
+                    raise OSError("Invalid directory")
+            except OSError:
+                messagebox.showerror("PS4", mt("directory_error"), parent=dlg)
+                return
+            self.output_dir_var.set(output_dir)
+            self.file_name_var.set(output_name)
+            self.temp_dir_var.set(temp)
             self._ps4_merge_busy = True
             dlg.destroy()
-            self._qphase("PS4 oyun + update birleştirme")
-            self._qstatus("Birleştirme hazırlanıyor...")
+            self._qphase(mt("merge_title"))
+            self._qstatus(mt("preparing"))
             self._qprogress(0)
-            self._qlog("PS4 birleştirme başladı. İlerleme bu ekranda gösterilecek.", "title")
+            self._qlog(mt("started"), "title")
             self._update_start_button_state()
             def worker():
                 try:
@@ -6446,7 +6481,7 @@ class App(tk.Tk):
                             return extract_pkg(value, temp, lambda m: self._qlog(m, "info"))
                         if os.path.isdir(value):
                             return value
-                        raise ValueError("Kaynak bir PS4 klasörü veya .pkg dosyası olmalı: " + value)
+                        raise ValueError(mt("invalid") + value)
                     game_dir = stage(base)
                     update_dir = stage(patch)
                     dst = os.path.join(temp, "ps4_merge_" + uuid.uuid4().hex[:10])
@@ -6467,7 +6502,7 @@ class App(tk.Tk):
                             return
                         last_report[0] = now
                         percent = min(100.0, 100.0 * copied / max(1, total))
-                        msg = (f"PS4 birleştirme %{percent:.1f} | "
+                        msg = (f"{mt('merge_title')} %{percent:.1f} | "
                                f"{copied / 1024**3:.2f}/{total / 1024**3:.2f} GB | "
                                f"{files}/{count} dosya")
                         self._qprogress(percent)
@@ -6475,29 +6510,29 @@ class App(tk.Tk):
                         if now - getattr(self, "_merge_last_log", 0) >= 5:
                             self._merge_last_log = now
                             self._qlog(msg, "info")
-                    self._qphase("Oyun ve update dosyaları kopyalanıyor")
+                    self._qphase(mt("copying"))
                     result = merge_ps4_folders(game_dir, update_dir, dst, effective_title, progress=progress)
                     def done():
                         self.source_var.set(result["folder"])
                         self.auto_file_name(silent=True)
                         self._ps4_merge_busy = False
                         self._qprogress(100)
-                        self._qstatus("PS4 birleştirme tamamlandı. FFPFSC için Dönüştür'e basın.")
+                        self._qstatus(mt("done"))
                         self._log("PS4 birleşimi hazır: " + result["folder"], "success")
                         self._update_start_button_state()
-                        messagebox.showinfo("PS4", "Birleşim tamamlandı. FFPFSC için Tek Oyunu Dönüştür'e basın.")
+                        messagebox.showinfo("PS4", mt("done"))
                     self.after(0, done)
                 except Exception as exc:
                     error = str(exc)
                     def failed():
                         self._ps4_merge_busy = False
-                        self._qstatus("PS4 birleştirme başarısız")
+                        self._qstatus(mt("failed"))
                         self._log("PS4 birleştirme hatası: " + error, "error")
                         self._update_start_button_state()
-                        messagebox.showerror("Birleştirme hatası", error, parent=self)
+                        messagebox.showerror(mt("error"), error, parent=self)
                     self.after(0, failed)
             threading.Thread(target=worker, daemon=True).start()
-        btn = tk.Button(dlg, text="Birleştir ve Kaynak Olarak Seç", command=merge,
+        btn = tk.Button(dlg, text=mt("submit"), command=merge,
                         bg="#16a34a", fg="white", font=("Segoe UI", 11, "bold"))
         btn.pack(pady=10)
 
