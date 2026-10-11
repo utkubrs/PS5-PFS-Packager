@@ -62,7 +62,7 @@ def detect_logical_cpu_count() -> int:
     except Exception:
         return 1
 
-APP_VERSION = "2.21"
+APP_VERSION = "2.22"
 APP_TITLE = "PS5 PFS Paketleyici"
 
 MKPFS_RELEASES_URL = "https://github.com/PSBrew/MkPFS/releases"
@@ -6446,12 +6446,13 @@ class App(tk.Tk):
                     # Use actual PARAM.SFO title when the dialog still shows the
                     # automatic filename suggestion; explicit user edits take precedence.
                     original_name = os.path.splitext(os.path.basename(base))[0].replace("_", " ").replace("-", " ")
-                    if title == original_name:
+                    effective_title = title
+                    if effective_title == original_name:
                         try:
-                            title = sfo_fields(os.path.join(game_dir, "sce_sys", "param.sfo")).get("TITLE", "") or title
+                            effective_title = (sfo_fields(os.path.join(game_dir, "sce_sys", "param.sfo")).get("TITLE", "") or effective_title)
                         except (OSError, ValueError):
                             pass
-                    result = merge_ps4_folders(game_dir, update_dir, dst, title)
+                    result = merge_ps4_folders(game_dir, update_dir, dst, effective_title)
                     def done():
                         self.source_var.set(result["folder"])
                         self.auto_file_name(silent=True)
