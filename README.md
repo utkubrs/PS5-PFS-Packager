@@ -37,7 +37,7 @@ Download the latest Windows package from the repository's **Releases** page.
 The release asset is named:
 
 ```text
-PS5-PFS-Packager-v2.13.0-Windows-x64.zip
+PS5-PFS-Packager-v2.14.0-Windows-x64.zip
 ```
 
 After downloading:
@@ -222,3 +222,15 @@ Notable upstream changes used by this GUI:
 - restored PS4 / PS5 selection in the upstream GUI.
 
 The desktop GUI now exposes a **Platform** selector with `PS5` and `PS4`. `PS5` remains the default target.
+
+
+## v2.14.0 enhancements
+
+- Game title, Title ID and locally available `sce_sys/icon0.png` preview when selecting a game directory.
+- Preflight disk space and TEMP/output directory checks before packing; output-in-source protection.
+- Explicit block-size advice in preview while preserving upstream auto selection.
+- Safety guard blocking PS5 compressed raw PFS packing.
+- Windows EXE icon generated and embedded at build time.
+- Existing batch conversion and image editing capabilities remain available.
+
+See [v2.14.0 release notes](RELEASE_NOTES_v2.14.0.md). Windows binaries are published via GitHub Actions after a successful build. Source changes are not evidence of a successful executable build.
