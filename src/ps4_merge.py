@@ -72,9 +72,10 @@ def sfo_fields_from_bytes(data: bytes):
 
 def merge_ps4_folders(base: str, update: str, destination: str, title: str="") -> dict:
     base,update,destination=map(lambda p:Path(p).resolve(),(base,update,destination))
-    for label,p in (("Base",base),("Update",update)):
-        if not p.is_dir() or not (p/"eboot.bin").exists() or not (p/"sce_sys"/"param.sfo").exists():
-            raise ValueError(f"{label} must be extracted PS4 game folder with eboot.bin and sce_sys/param.sfo")
+    if not base.is_dir() or not (base/"eboot.bin").is_file() or not (base/"sce_sys"/"param.sfo").is_file():
+        raise ValueError("Base must contain eboot.bin and sce_sys/param.sfo")
+    if not update.is_dir() or not (update/"sce_sys"/"param.sfo").is_file():
+        raise ValueError("Update must contain sce_sys/param.sfo (eboot.bin is optional)")
     if base==update or destination.exists():raise ValueError("Destination exists or inputs coincide")
     if base in destination.parents or update in destination.parents:raise ValueError("Destination must not be within inputs")
     base_fields=sfo_fields(str(base/"sce_sys"/"param.sfo"))
