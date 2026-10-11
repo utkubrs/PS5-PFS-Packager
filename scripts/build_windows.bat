@@ -31,6 +31,10 @@ echo [3/4] Cleaning output...
 if exist dist rmdir /s /q dist
 mkdir dist
 
+echo [4/4] Preparing application icon...
+"%PY%" scripts\generate_icon.py
+if errorlevel 1 goto :error
+
 echo [4/4] Building EXE with Nuitka...
 "%PY%" -m nuitka ^
   --mode=onefile ^
@@ -40,6 +44,8 @@ echo [4/4] Building EXE with Nuitka...
   --enable-plugin=tk-inter ^
   --windows-console-mode=disable ^
   --windows-uac-admin ^
+  --windows-icon-from-ico=assets\appicon.ico ^
+  --include-data-files=assets\appicon.ico=appicon.ico ^
   --output-dir=dist ^
   --output-filename=PS5-PFS-Packager.exe ^
   --include-package=mkpfs ^
