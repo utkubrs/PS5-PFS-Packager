@@ -37,7 +37,7 @@ Download the latest Windows package from the repository's **Releases** page.
 The release asset is named:
 
 ```text
-PS5-PFS-Packager-v2.14.0-Windows-x64.zip
+PS5-PFS-Packager-v2.15.0-Windows-x64.zip
 ```
 
 After downloading:
@@ -224,7 +224,7 @@ Notable upstream changes used by this GUI:
 The desktop GUI now exposes a **Platform** selector with `PS5` and `PS4`. `PS5` remains the default target.
 
 
-## v2.14.0 enhancements
+## v2.15.0 enhancements
 
 - Game title, Title ID and locally available `sce_sys/icon0.png` preview when selecting a game directory.
 - Preflight disk space and TEMP/output directory checks before packing; output-in-source protection.
@@ -233,4 +233,17 @@ The desktop GUI now exposes a **Platform** selector with `PS5` and `PS4`. `PS5` 
 - Windows EXE icon generated and embedded at build time.
 - Existing batch conversion and image editing capabilities remain available.
 
-See [v2.14.0 release notes](RELEASE_NOTES_v2.14.0.md). Windows binaries are published via GitHub Actions after a successful build. Source changes are not evidence of a successful executable build.
+See [v2.15.0 release notes](RELEASE_NOTES_v2.15.0.md). Windows binaries are published via GitHub Actions after a successful build. Source changes are not evidence of a successful executable build.
+
+
+## PS4 inputs (v2.15.0)
+
+Choose **PS4** in the Platform control before converting a PS4 title.
+
+- Unpacked PS4 game folders containing `eboot.bin` and `sce_sys/param.sfo` are accepted, including in batch discovery.
+- `.exfat` and MkPFS-compatible `.ffpkg` images are passed directly to MkPFS `pack file`.
+- `.pkg` files use optional external [pkgextract](https://github.com/paulomanrique/ps4-pkg-extractor) CLI. Install `pkgextract.exe` in PATH, or set `PS4_PKG_EXTRACTOR` to the absolute executable path. Extraction is staged under the **selected TEMP directory** and retained for inspection. Provide enough disk space for both extraction and the output. Do not reuse an existing extraction folder without cleaning it manually.
+- Existing PlayStation encrypted retail PKGs are **not guaranteed** to be extractable. Extraction does not remove license or encryption requirements; only convert your legally owned and compatible content.
+- PS4 folder packing omits PS5-specific `--require-game-files` validation. Actual console compatibility must be verified separately.
+
+Read [release notes](RELEASE_NOTES_v2.15.0.md) for limitations and test status.
