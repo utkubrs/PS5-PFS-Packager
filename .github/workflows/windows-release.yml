@@ -1,5 +1,5 @@
 name: Build and publish Windows package
-# v2.19.0 release build: one push-triggered run for workflow changes; manual thereafter.
+# v2.20.0 release build: one push-triggered run for workflow changes; manual thereafter.
 
 on:
   push:
@@ -53,14 +53,29 @@ jobs:
         shell: cmd
         run: call scripts\build_windows.bat <nul
 
+      - name: Smoke test standalone MkPFS child invocation
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = "dist/ps5_pfs_packager.dist/PS5-PFS-Packager.exe"
+          if (!(Test-Path $exe)) { throw "Standalone EXE missing" }
+          $log = Join-Path $env:RUNNER_TEMP 'mkpfs-smoke.txt'
+          $err = Join-Path $env:RUNNER_TEMP 'mkpfs-smoke-error.txt'
+          $proc = Start-Process -FilePath (Resolve-Path $exe) -ArgumentList @('--internal-mkpfs','--help') -RedirectStandardOutput $log -RedirectStandardError $err -Wait -PassThru
+          $output = (Get-Content $log -Raw -ErrorAction SilentlyContinue) + (Get-Content $err -Raw -ErrorAction SilentlyContinue)
+          Write-Host $output
+          if ($proc.ExitCode -ne 0 -or $output -match 'Error, load DLL') { throw "MkPFS subprocess smoke test failed with exit $($proc.ExitCode)" }
+
       - name: Package executable and checksums
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $version = '2.19.0'
+          $version = '2.20.0'
           $name = "PS5-PFS-Packager-v$version-Windows-x64"
           New-Item -ItemType Directory -Force -Path release, "release/$name" | Out-Null
-          Copy-Item "dist/PS5-PFS-Packager.exe" "release/$name/"
+          $dist = 'dist/ps5_pfs_packager.dist'
+          if (!(Test-Path "$dist/PS5-PFS-Packager.exe")) { throw 'Standalone application folder missing' }
+          Copy-Item "$dist/*" "release/$name/" -Recurse -Force
           Copy-Item "README.md" "release/$name/"
           New-Item -ItemType Directory -Force "release/$name/tools" | Out-Null
           Copy-Item "tools/pkgextract.exe" "release/$name/tools/pkgextract.exe"
@@ -76,7 +91,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: PS5-PFS-Packager-v2.19.0-Windows-x64
+          name: PS5-PFS-Packager-v2.20.0-Windows-x64
           path: |
             release/*.zip
             release/SHA256SUMS.txt
@@ -88,11 +103,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference = 'Stop'
-          $tag = 'v2.19.0'
+          $tag = 'v2.20.0'
           gh release view $tag --repo "$env:GITHUB_REPOSITORY" *> $null
           if ($LASTEXITCODE -ne 0) {
             gh release create $tag --repo "$env:GITHUB_REPOSITORY" --target "$env:GITHUB_SHA" --title "PS5 PFS Packager $tag" --notes "Windows x64 package built from the repository with MkPFS 1.1.0. See README for instructions."
             if ($LASTEXITCODE -ne 0) { throw "Release creation failed" }
           }
-          gh release upload $tag "release/PS5-PFS-Packager-v2.19.0-Windows-x64.zip" "release/SHA256SUMS.txt" --clobber --repo "$env:GITHUB_REPOSITORY"
+          gh release upload $tag "release/PS5-PFS-Packager-v2.20.0-Windows-x64.zip" "release/SHA256SUMS.txt" --clobber --repo "$env:GITHUB_REPOSITORY"
           if ($LASTEXITCODE -ne 0) { throw "Release upload failed" }
