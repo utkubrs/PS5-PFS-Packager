@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'src/**'
+      - 'tests/**'
       - 'scripts/build_windows.bat'
       - 'requirements*.txt'
       - '.github/workflows/windows-release.yml'
@@ -24,6 +25,10 @@ jobs:
         with:
           python-version: '3.11'
           architecture: x64
+
+      - name: Test PS4 input handling
+        shell: pwsh
+        run: python -m unittest discover -s tests -p "test_ps4_inputs.py" -v
 
       - name: Build executable
         shell: cmd
