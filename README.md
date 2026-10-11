@@ -37,7 +37,7 @@ Download the latest Windows package from the repository's **Releases** page.
 The release asset is named:
 
 ```text
-PS5-PFS-Packager-v2.18.0-Windows-x64.zip
+PS5-PFS-Packager-v2.19.0-Windows-x64.zip
 ```
 
 After downloading:
@@ -224,7 +224,7 @@ Notable upstream changes used by this GUI:
 The desktop GUI now exposes a **Platform** selector with `PS5` and `PS4`. `PS5` remains the default target.
 
 
-## v2.18.0 enhancements
+## v2.19.0 enhancements
 
 - Game title, Title ID and locally available `sce_sys/icon0.png` preview when selecting a game directory.
 - Preflight disk space and TEMP/output directory checks before packing; output-in-source protection.
@@ -233,10 +233,10 @@ The desktop GUI now exposes a **Platform** selector with `PS5` and `PS4`. `PS5` 
 - Windows EXE icon generated and embedded at build time.
 - Existing batch conversion and image editing capabilities remain available.
 
-See [v2.18.0 release notes](RELEASE_NOTES_v2.18.0.md). Windows binaries are published via GitHub Actions after a successful build. Source changes are not evidence of a successful executable build.
+See [v2.19.0 release notes](RELEASE_NOTES_v2.19.0.md). Windows binaries are published via GitHub Actions after a successful build. Source changes are not evidence of a successful executable build.
 
 
-## PS4 inputs (v2.18.0)
+## PS4 inputs (v2.19.0)
 
 Choose **PS4** in the Platform control before converting a PS4 title.
 
@@ -246,20 +246,20 @@ Choose **PS4** in the Platform control before converting a PS4 title.
 - Existing PlayStation encrypted retail PKGs are **not guaranteed** to be extractable. Extraction does not remove license or encryption requirements; only convert your legally owned and compatible content.
 - PS4 folder packing omits PS5-specific `--require-game-files` validation. Actual console compatibility must be verified separately.
 
-Read [release notes](RELEASE_NOTES_v2.18.0.md) for limitations and test status.
+Read [release notes](RELEASE_NOTES_v2.19.0.md) for limitations and test status.
 
 
-## PS4 Merge + PARAM.SFO (v2.18.0)
+## PS4 Merge + PARAM.SFO (v2.19.0)
 
 - **PS4 Oyun + Update Birleştir** accepts already-extracted base and update game folders and stages the merged game into your selected TEMP location. Originals remain untouched.
 - The merge overlays update game files over base files, while preserving base `sce_sys/param.sfo`, `icon0.png`, `pic0.png`, `pic1.png` and related images. The update and base `TITLE_ID` must match when both are present.
 - Enter an optional game title; the `TITLE` value is changed with UTF-8 length validation. `TITLE_ID` and `CONTENT_ID` are never edited. A separate **PARAM.SFO Düzenle** window exposes safe TITLE editing.
 - After merging, use the existing Convert action to build FFPFSC. This is **folder merge → FFPFSC**, not a newly created PS4 PKG.
 - Success/error MP3 calls already exist in the code, but the actual original MP3 binary assets must also be supplied during the build. If they are not embedded, the application falls back to existing notification behavior.
-- Consult [v2.16 notes](RELEASE_NOTES_v2.18.0.md).
+- Consult [v2.16 notes](RELEASE_NOTES_v2.19.0.md).
 
 
-## v2.18.0: PS4 PKG inputs and custom title
+## v2.19.0: PS4 PKG inputs and custom title
 
 - The PS4 Oyun + Update Birleştir dialog accepts extracted PS4 folders or .pkg files for both base game and update. .pkg extraction requires an optional, separately installed pkgextract CLI.
 - Extraction and merged files are staged in the selected TEMP folder. Originals remain unchanged. Allow space for extraction and merged content.
@@ -267,10 +267,10 @@ Read [release notes](RELEASE_NOTES_v2.18.0.md) for limitations and test status.
 - Base icon0.png, pic0.png, pic1.png and param.sfo remain authoritative during merge. TITLE_ID and CONTENT_ID remain protected.
 - Encrypted retail PKGs might not be extractable; merge does not guarantee runtime compatibility.
 
-See RELEASE_NOTES_v2.18.0.md.
+See RELEASE_NOTES_v2.19.0.md.
 
 
-## v2.18.0 refinements
+## v2.19.0 refinements
 
 - Removed the redundant main-screen PS4 TITLE entry. The merge dialog still permits editing the game title.
 - Base game title is suggested from the file name and refined from its actual PARAM.SFO TITLE after extraction unless customized.
@@ -278,3 +278,12 @@ See RELEASE_NOTES_v2.18.0.md.
 - PS4 package extractor is located via PS4_PKG_EXTRACTOR, PATH, or a portable pkgextract.exe placed beside the EXE or under tools/.
 - Original sound effects are searched beside the installed EXE or in the nearby assets/ folder. The repository presently does not contain the original binary MP3 assets. To hear the original cues, place completion.mp3 and error.mp3 alongside PS5-PFS-Packager.exe (or under assets/).
 - A working package extractor remains mandatory for PKG inputs, and encrypted/DRM-protected retail packages may be unsupported. Windows EXE and real console behavior still require tests.
+
+
+## v2.19.0: PS4 PKG extractor shipped in Windows ZIP
+
+The Windows release workflow downloads pinned upstream `pkgextract.exe` v0.0.1 and verifies the exact SHA-256 archive checksum before shipping it under `tools/pkgextract.exe`. It is distributed with the Windows release ZIP, not embedded inside the Nuitka EXE. Extract the full ZIP before launching the application; copying only the main EXE will result in the missing-extractor error. PS4 update input need not contain eboot.bin; it must contain sce_sys/param.sfo.
+
+**Audio**: Original custom completion.mp3 and error.mp3 are not committed as binary assets in this repository. To use them, copy the previously supplied original files beside PS5-PFS-Packager.exe. The code will detect and play them. This release does NOT claim that the custom MP3s are bundled.
+
+Platform PKG extraction may still fail for encrypted/proprietary PKGs. Windows execution and game compatibility require real tests.
