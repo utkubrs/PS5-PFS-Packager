@@ -3851,6 +3851,12 @@ class App(tk.Tk):
                 pass
 
         apply_widget(self)
+        try:
+            buttons = [w for w in self.ps4_tools_frame.winfo_children() if isinstance(w, tk.Button)]
+            buttons[0].configure(text=merge_text(self.lang_code(), "merge_title"))
+            buttons[1].configure(text=merge_text(self.lang_code(), "sfo_button"))
+        except (AttributeError, IndexError, tk.TclError):
+            pass
         self._refresh_game_preview()
 
         try:
@@ -3989,8 +3995,9 @@ class App(tk.Tk):
 
         ps4_tools = tk.Frame(self, bg="#151515")
         ps4_tools.pack(fill="x", padx=34, pady=(0, 6))
-        tk.Button(ps4_tools, text="PS4 Oyun + Update Birleştir", command=self.show_ps4_merge_dialog, bg="#0e7490", fg="white", font=("Segoe UI",10,"bold")).pack(side="left", padx=(0,8))
-        tk.Button(ps4_tools, text="PARAM.SFO Düzenle", command=self.show_sfo_editor, bg="#334155", fg="white", font=("Segoe UI",10,"bold")).pack(side="left")
+        self.ps4_tools_frame = ps4_tools
+        tk.Button(ps4_tools, text=merge_text(self.lang_code(), "merge_title"), command=self.show_ps4_merge_dialog, bg="#0e7490", fg="white", font=("Segoe UI",10,"bold")).pack(side="left", padx=(0,8))
+        tk.Button(ps4_tools, text=merge_text(self.lang_code(), "sfo_button"), command=self.show_sfo_editor, bg="#334155", fg="white", font=("Segoe UI",10,"bold")).pack(side="left")
 
         self.mode_tab_frame = tk.Frame(self, bg="#151515")
         self.mode_tab_frame.pack(fill="x", padx=34, pady=(0, 10))
@@ -6542,7 +6549,7 @@ class App(tk.Tk):
         source=normalize_path(self.source_var.get().strip())
         path=os.path.join(source,"sce_sys","param.sfo") if os.path.isdir(source) else source
         if not os.path.isfile(path) or not path.lower().endswith(".sfo"):
-            path=filedialog.askopenfilename(title="param.sfo seç",filetypes=[("SFO","*.sfo")],parent=self)
+            path=filedialog.askopenfilename(title=merge_text(self.lang_code(), "select_sfo"),filetypes=[("SFO","*.sfo")],parent=self)
             if not path:return
         try:
             info=sfo_fields(path)
@@ -6550,22 +6557,22 @@ class App(tk.Tk):
             messagebox.showerror("SFO",str(exc))
             return
         dlg=tk.Toplevel(self)
-        dlg.title("PARAM.SFO – yalnızca TITLE düzenleme")
+        dlg.title(merge_text(self.lang_code(), "sfo_title"))
         dlg.geometry("590x260")
         dlg.configure(bg="#151515")
         for key in ("TITLE_ID","CONTENT_ID"):
             tk.Label(dlg,text=key+": "+info.get(key,"-"),bg="#151515",fg="#cbd5e1").pack(anchor="w",padx=18,pady=5)
-        tk.Label(dlg,text="Oyun adı (TITLE)",bg="#151515",fg="white").pack(anchor="w",padx=18)
+        tk.Label(dlg,text=merge_text(self.lang_code(), "sfo_game_title"),bg="#151515",fg="white").pack(anchor="w",padx=18)
         title=tk.StringVar(value=info.get("TITLE",""))
         tk.Entry(dlg,textvariable=title,width=64).pack(padx=18,pady=8)
         def save():
             try:
                 edit_sfo_title(path,title.get())
-                messagebox.showinfo("SFO","TITLE güncellendi. TITLE_ID ve CONTENT_ID korunmuştur.",parent=dlg)
+                messagebox.showinfo("SFO",merge_text(self.lang_code(), "sfo_saved"),parent=dlg)
                 dlg.destroy()
             except Exception as exc:
                 messagebox.showerror("SFO",str(exc),parent=dlg)
-        tk.Button(dlg,text="Kaydet",command=save,bg="#16a34a",fg="white").pack(pady=8)
+        tk.Button(dlg,text=merge_text(self.lang_code(), "save"),command=save,bg="#16a34a",fg="white").pack(pady=8)
 
     def pick_source(self):
         if self.batch_var.get():
