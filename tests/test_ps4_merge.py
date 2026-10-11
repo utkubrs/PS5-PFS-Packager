@@ -42,7 +42,11 @@ class PS4MergeTest(unittest.TestCase):
             (base/"sce_sys"/"icon0.png").write_text("ORIGINAL")
             (update/"sce_sys"/"icon0.png").write_text("UPDATE")
             (update/"new_data.bin").write_text("PATCH")
-            merge_ps4_folders(str(base),str(update),str(merged),"Merged TR")
+            calls=[]
+            merge_ps4_folders(str(base),str(update),str(merged),"Merged TR",progress=lambda *v:calls.append(v))
+            self.assertTrue(calls)
+            self.assertEqual(calls[-1][0],calls[-1][1])
+            self.assertEqual(calls[-1][2],calls[-1][3])
             self.assertEqual((merged/"sce_sys"/"icon0.png").read_text(),"ORIGINAL")
             self.assertEqual((merged/"new_data.bin").read_text(),"PATCH")
             self.assertEqual(sfo_fields(str(merged/"sce_sys"/"param.sfo"))["TITLE"],"Merged TR")
