@@ -1,5 +1,5 @@
 name: Build and publish Windows package
-# v2.22.0 release build: hidden PKG extraction and platform auto-detection smoke build.
+# v2.22.0: corrected PS4 merge title scope, rerun standalone smoke and publish if green.
 
 on:
   push:
