@@ -7699,7 +7699,9 @@ class App(tk.Tk):
             path = resource_path(filename)
             if not os.path.isfile(path):
                 # Portable EXE deployments can provide the original MP3s externally.
-                for folder in (app_base_dir(), os.path.join(app_base_dir(), "assets"),
+                actual_exe_dir = os.path.dirname(compiled_executable_path())
+                for folder in (actual_exe_dir, os.path.join(actual_exe_dir, "assets"),
+                               app_base_dir(), os.path.join(app_base_dir(), "assets"),
                                os.path.dirname(sys.executable)):
                     alternative = os.path.join(folder, filename)
                     if os.path.isfile(alternative):
