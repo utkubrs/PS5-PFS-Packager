@@ -55,8 +55,15 @@ def extract_pkg(source: str, temp_dir: str, log=None) -> str:
     if folder.exists():
         raise FileExistsError(f"Extraction target exists: {folder}. Remove it or choose a different TEMP directory.")
     if log:log(f"Extracting {source.name} to {folder}")
+    flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+    startup = None
+    if os.name == "nt":
+        startup = subprocess.STARTUPINFO()
+        startup.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        startup.wShowWindow = 0
     completed=subprocess.run([str(tool),str(source),"-o",str(folder)],stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,errors="replace",timeout=21600,
+        creationflags=flags, startupinfo=startup,
         env={**os.environ,"TEMP":str(Path(temp_dir).resolve()),"TMP":str(Path(temp_dir).resolve())})
     if completed.returncode:
         raise RuntimeError(f"pkgextract failed with exit code {completed.returncode}: {completed.stdout[-2000:]}")
