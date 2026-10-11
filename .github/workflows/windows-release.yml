@@ -1,15 +1,11 @@
 name: Build and publish Windows package
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'src/**'
-      - 'tests/**'
-      - 'scripts/build_windows.bat'
-      - 'requirements*.txt'
-      - '.github/workflows/windows-release.yml'
   workflow_dispatch:
+
+concurrency:
+  group: windows-release
+  cancel-in-progress: true
 
 permissions:
   contents: write
