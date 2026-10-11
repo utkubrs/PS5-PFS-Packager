@@ -52,14 +52,16 @@ echo [4/4] Building EXE with Nuitka...
   --include-package-data=mkpfs ^
   --include-module=mkpfs.cli ^
   --include-module=native_exfat_mount ^
+  --include-module=ps4_inputs ^
+  --include-module=upgrade_features ^
   --include-package=psutil ^
   --include-package=cryptography ^
   --file-description="PS5 PFS Packager - FFPFSC and exFAT Converter" ^
   --product-name="PS5 PFS Packager" ^
   --company-name="PS5 PFS Packager Contributors" ^
   --copyright="GPL-3.0-or-later" ^
-  --file-version=2.14.0.0 ^
-  --product-version=2.14.0.0 ^
+  --file-version=2.15.0.0 ^
+  --product-version=2.15.0.0 ^
   src\ps5_pfs_packager.py
 
 if errorlevel 1 goto :error
