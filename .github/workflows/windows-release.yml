@@ -34,7 +34,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $version = '2.16.0'
+          $version = '2.17.0'
           $name = "PS5-PFS-Packager-v$version-Windows-x64"
           New-Item -ItemType Directory -Force -Path release, "release/$name" | Out-Null
           Copy-Item "dist/PS5-PFS-Packager.exe" "release/$name/"
@@ -47,7 +47,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: PS5-PFS-Packager-v2.16.0-Windows-x64
+          name: PS5-PFS-Packager-v2.17.0-Windows-x64
           path: |
             release/*.zip
             release/SHA256SUMS.txt
@@ -59,11 +59,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference = 'Stop'
-          $tag = 'v2.16.0'
+          $tag = 'v2.17.0'
           gh release view $tag --repo "$env:GITHUB_REPOSITORY" *> $null
           if ($LASTEXITCODE -ne 0) {
             gh release create $tag --repo "$env:GITHUB_REPOSITORY" --target "$env:GITHUB_SHA" --title "PS5 PFS Packager $tag" --notes "Windows x64 package built from the repository with MkPFS 1.1.0. See README for instructions."
             if ($LASTEXITCODE -ne 0) { throw "Release creation failed" }
           }
-          gh release upload $tag "release/PS5-PFS-Packager-v2.16.0-Windows-x64.zip" "release/SHA256SUMS.txt" --clobber --repo "$env:GITHUB_REPOSITORY"
+          gh release upload $tag "release/PS5-PFS-Packager-v2.17.0-Windows-x64.zip" "release/SHA256SUMS.txt" --clobber --repo "$env:GITHUB_REPOSITORY"
           if ($LASTEXITCODE -ne 0) { throw "Release upload failed" }
