@@ -36,7 +36,8 @@ class PS4MergeTest(unittest.TestCase):
             base=Path(tmp)/"base";update=Path(tmp)/"update";merged=Path(tmp)/"merged"
             for p in (base,update):
                 (p/"sce_sys").mkdir(parents=True)
-                (p/"eboot.bin").write_text(p.name)
+                if p == base:
+                    (p/"eboot.bin").write_text(p.name)
                 make_sfo(p/"sce_sys"/"param.sfo",category="gp" if p==update else "gd")
             (base/"sce_sys"/"icon0.png").write_text("ORIGINAL")
             (update/"sce_sys"/"icon0.png").write_text("UPDATE")
