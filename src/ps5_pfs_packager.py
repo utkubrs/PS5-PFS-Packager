@@ -4590,6 +4590,13 @@ class App(tk.Tk):
         try:
             info = inspect_game(self.source_var.get().strip())
             details = " | ".join(x for x in (info["title"], info["title_id"]) if x)
+            try:
+                ram_gib = (psutil.virtual_memory().total / 1024**3) if psutil else 8
+                size_gib = os.path.getsize(self.source_var.get().strip()) / 1024**3 if os.path.isfile(self.source_var.get().strip()) else 0
+                if os.path.isdir(self.source_var.get().strip()):
+                    details += " | Suggested block: " + recommended_block_size(ram_gib, size_gib) + " (auto remains default)"
+            except (OSError, AttributeError):
+                pass
             self.game_preview_label.configure(text="Game: " + details, image="", compound="left")
             self.game_preview_image = None
             if info["icon"]:
