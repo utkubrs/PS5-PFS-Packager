@@ -1,5 +1,5 @@
 name: Build and publish Windows package
-# v2.24.0: integrated output settings and 15-language merge/SFO interface.
+# v2.24.0 release: integrated output/TEMP/filename settings and 15-language test build.
 
 on:
   push:
