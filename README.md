@@ -37,7 +37,7 @@ Download the latest Windows package from the repository's **Releases** page.
 The release asset is named:
 
 ```text
-PS5-PFS-Packager-v2.19.0-Windows-x64.zip
+PS5-PFS-Packager-v2.20.0-Windows-x64.zip
 ```
 
 After downloading:
@@ -287,3 +287,11 @@ The Windows release workflow downloads pinned upstream `pkgextract.exe` v0.0.1 a
 **Audio**: Original custom completion.mp3 and error.mp3 are not committed as binary assets in this repository. To use them, copy the previously supplied original files beside PS5-PFS-Packager.exe. The code will detect and play them. This release does NOT claim that the custom MP3s are bundled.
 
 Platform PKG extraction may still fail for encrypted/proprietary PKGs. Windows execution and game compatibility require real tests.
+
+
+## v2.20.0 – Windows DLL error 126 fix
+
+- Nuitka now builds a **standalone directory**, not a single-file executable. This avoids launching a second instance of the onefile bootstrap when MkPFS runs as a child process.
+- GitHub Actions runs `PS5-PFS-Packager.exe --internal-mkpfs --help` as a subprocess and **blocks publication** if it fails.
+- The Windows ZIP contains the entire standalone application folder, its DLLs, and the optional PS4 PKG extractor in `tools/`. **Keep all these files together**; do not move only the EXE.
+- Build and smoke test success are not a substitute for real PS4/PS5 console verification.
