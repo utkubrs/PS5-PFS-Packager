@@ -2,3 +2,5 @@
 nuitka>=2.6
 ordered-set>=4.1
 zstandard>=0.22
+
+Pillow>=10.0
