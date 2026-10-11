@@ -35,7 +35,7 @@ echo [4/4] Preparing application icon...
 "%PY%" scripts\generate_icon.py
 if errorlevel 1 goto :error
 
-echo [4/4] Building EXE with Nuitka...
+echo [4/4] Building portable standalone EXE with Nuitka...
 set "SOUND_ARGS="
 if exist "assets\completion.mp3" if exist "assets\error.mp3" (
   set "SOUND_ARGS=--include-data-files=assets\completion.mp3=completion.mp3 --include-data-files=assets\error.mp3=error.mp3"
@@ -70,14 +70,14 @@ if exist "assets\completion.mp3" if exist "assets\error.mp3" (
   --product-name="PS5 PFS Packager" ^
   --company-name="PS5 PFS Packager Contributors" ^
   --copyright="GPL-3.0-or-later" ^
-  --file-version=2.19.0.0 ^
-  --product-version=2.19.0.0 ^
+  --file-version=2.20.0.0 ^
+  --product-version=2.20.0.0 ^
   src\ps5_pfs_packager.py
 
 if errorlevel 1 goto :error
 
 echo.
-echo [DONE] dist\PS5-PFS-Packager.exe
+echo [DONE] dist\ps5_pfs_packager.dist\PS5-PFS-Packager.exe
 pause
 exit /b 0
 
