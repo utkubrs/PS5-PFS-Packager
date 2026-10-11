@@ -37,7 +37,7 @@ Download the latest Windows package from the repository's **Releases** page.
 The release asset is named:
 
 ```text
-PS5-PFS-Packager-v2.21.0-Windows-x64.zip
+PS5-PFS-Packager-v2.22.0-Windows-x64.zip
 ```
 
 After downloading:
@@ -304,3 +304,8 @@ Platform PKG extraction may still fail for encrypted/proprietary PKGs. Windows e
 - The PS4 merge window selects PS4 automatically. The same source-change detection applies in normal single-file conversion.
 - Original MP3 playback logs whether completion.mp3/error.mp3 were found and the Windows playback error if present. **The audio binary assets are not committed to this repository**. Put both files beside the EXE or into the assets directory to get the original cues. Log diagnostics do not make unavailable sound assets appear automatically.
 - MkPFS remains 1.1.0; real Windows execution and console compatibility still require verification.
+
+
+## v2.22.0 PS4 merge title fix
+
+Fixed a Python `UnboundLocalError` caused by reassigning the merge dialog TITLE within the background worker's scope. The merge now uses a local `effective_title`; explicitly entered names are preserved and the base game's PARAM.SFO remains the fallback. Previously extracted game/update folders can be selected directly with the **Klasör** buttons after checking that extraction completed. Do not use incomplete extraction folders.
