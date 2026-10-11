@@ -42,6 +42,7 @@ def extract_pkg(source: str, temp_dir: str, log=None) -> str:
         str(app_dir/"pkgextract.exe"),
         str(app_dir/"tools"/"pkgextract.exe"),
         str(app_dir/"pkgextract"/"pkgextract.exe"),
+        str(app_dir/"PS5-PFS-Packager"/"pkgextract.exe"),
         shutil.which("pkgextract.exe"),
         shutil.which("pkgextract"),
     ]
@@ -59,13 +60,19 @@ def extract_pkg(source: str, temp_dir: str, log=None) -> str:
         env={**os.environ,"TEMP":str(Path(temp_dir).resolve()),"TMP":str(Path(temp_dir).resolve())})
     if completed.returncode:
         raise RuntimeError(f"pkgextract failed with exit code {completed.returncode}: {completed.stdout[-2000:]}")
-    if is_ps4_game_folder(str(folder)):
+    def looks_like_ps4_content(path):
+        p=Path(path)
+        return p.is_dir() and (p/"sce_sys"/"param.sfo").is_file() and (p/"eboot.bin").is_file()
+    def looks_like_ps4_update(path):
+        p=Path(path)
+        return p.is_dir() and (p/"sce_sys"/"param.sfo").is_file()
+    if looks_like_ps4_update(str(folder)):
         return str(folder)
     for root,dirs,files in os.walk(folder):
         relative=Path(root).relative_to(folder)
         if len(relative.parts)>3:
             dirs.clear()
             continue
-        if is_ps4_game_folder(root):
+        if looks_like_ps4_content(root) or looks_like_ps4_update(root):
             return str(Path(root))
     raise RuntimeError(f"No valid extracted PS4 game folder in {folder}. Files were retained for inspection.")
