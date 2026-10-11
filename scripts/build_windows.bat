@@ -77,6 +77,12 @@ if exist "assets\completion.mp3" if exist "assets\error.mp3" (
 if errorlevel 1 goto :error
 
 echo.
+if exist "dist\PS5-PFS-Packager.exe" if exist "dist\ps5_pfs_packager.dist" (
+  move /Y "dist\PS5-PFS-Packager.exe" "dist\ps5_pfs_packager.dist\PS5-PFS-Packager.exe" >nul
+  if errorlevel 1 goto :error
+)
+if not exist "dist\ps5_pfs_packager.dist\PS5-PFS-Packager.exe" goto :error
+
 echo [DONE] dist\ps5_pfs_packager.dist\PS5-PFS-Packager.exe
 pause
 exit /b 0
