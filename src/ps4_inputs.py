@@ -61,12 +61,39 @@ def extract_pkg(source: str, temp_dir: str, log=None) -> str:
         startup = subprocess.STARTUPINFO()
         startup.dwFlags |= subprocess.STARTF_USESHOWWINDOW
         startup.wShowWindow = 0
-    completed=subprocess.run([str(tool),str(source),"-o",str(folder)],stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,errors="replace",timeout=21600,
+    process=subprocess.Popen([str(tool),str(source),"-o",str(folder)],stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,errors="replace",
         creationflags=flags, startupinfo=startup,
         env={**os.environ,"TEMP":str(Path(temp_dir).resolve()),"TMP":str(Path(temp_dir).resolve())})
-    if completed.returncode:
-        raise RuntimeError(f"pkgextract failed with exit code {completed.returncode}: {completed.stdout[-2000:]}")
+    # Track an approximate size-based progress indicator; no separate CMD window.
+    import threading
+    import time
+    stop=threading.Event()
+    expected=max(1,source.stat().st_size)
+    def watch():
+        previous=-1
+        while not stop.wait(3):
+            try:
+                current=sum(Path(root,filename).stat().st_size for root,_,files in os.walk(folder) for filename in files)
+                approx=min(99,int(current*100/expected))
+                if approx>previous and log:
+                    log(f"PKG extraction: ~{approx}% (size estimate, not exact)")
+                    previous=approx
+            except OSError:
+                pass
+    watcher=threading.Thread(target=watch,daemon=True)
+    watcher.start()
+    try:
+        output,_=process.communicate(timeout=21600)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.communicate()
+        raise RuntimeError("PKG extraction timed out")
+    finally:
+        stop.set()
+        watcher.join(timeout=1)
+    if process.returncode:
+        raise RuntimeError(f"pkgextract failed with exit code {process.returncode}: {(output or '')[-2000:]}")
     def looks_like_ps4_content(path):
         p=Path(path)
         return p.is_dir() and (p/"sce_sys"/"param.sfo").is_file() and (p/"eboot.bin").is_file()
