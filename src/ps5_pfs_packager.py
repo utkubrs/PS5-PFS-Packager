@@ -98,6 +98,25 @@ LANGUAGE_DISPLAY = {
 }
 LANGUAGE_CODE_BY_DISPLAY = {v: k for k, v in LANGUAGE_DISPLAY.items()}
 
+PREVIEW_TRANSLATIONS = {
+ "tr": ("Oyun önizlemesi", "Oyun önizlemesi: kaynak klasör veya dosya seçin"),
+ "en": ("Game preview", "Game preview: choose a source folder or file"),
+ "fr": ("Aperçu du jeu", "Aperçu du jeu : choisissez une source"),
+ "es": ("Vista previa del juego", "Vista previa del juego: seleccione el origen"),
+ "it": ("Anteprima gioco", "Anteprima gioco: seleziona una sorgente"),
+ "el": ("Προεπισκόπηση παιχνιδιού", "Προεπισκόπηση: επιλέξτε αρχείο ή φάκελο"),
+ "ko": ("게임 미리보기", "게임 미리보기: 원본을 선택하세요"),
+ "ja": ("ゲームプレビュー", "ゲームプレビュー: 元ファイルを選択"),
+ "de": ("Spielvorschau", "Spielvorschau: Quelle auswählen"),
+ "pt": ("Prévia do jogo", "Prévia do jogo: selecione a origem"),
+ "ru": ("Предпросмотр игры", "Предпросмотр: выберите источник"),
+ "zh": ("游戏预览", "游戏预览：请选择来源"),
+ "ar": ("معاينة اللعبة", "معاينة اللعبة: اختر المصدر"),
+ "nl": ("Spelvoorbeeld", "Spelvoorbeeld: kies de bron"),
+ "pl": ("Podgląd gry", "Podgląd gry: wybierz źródło"),
+}
+
+
 _I18N = {
     "en": {
         "app_title": "PS5 PFS Packager",
@@ -4606,8 +4625,8 @@ class App(tk.Tk):
             except (OSError, AttributeError):
                 pass
             self.game_preview_label.configure(
-                text=(self.tr("game_preview_label") + ": " + details if self.source_var.get().strip()
-                      else self.tr("game_preview_choose")),
+                text=(PREVIEW_TRANSLATIONS.get(self.lang_code(), PREVIEW_TRANSLATIONS["en"])[0] + ": " + details if self.source_var.get().strip()
+                      else PREVIEW_TRANSLATIONS.get(self.lang_code(), PREVIEW_TRANSLATIONS["en"])[1]),
                 image="", compound="left")
             self.game_preview_image = None
             if info["icon"]:
@@ -7574,6 +7593,14 @@ class App(tk.Tk):
         """
         def worker():
             path = resource_path(filename)
+            if not os.path.isfile(path):
+                # Portable EXE deployments can provide the original MP3s externally.
+                for folder in (app_base_dir(), os.path.join(app_base_dir(), "assets"),
+                               os.path.dirname(sys.executable)):
+                    alternative = os.path.join(folder, filename)
+                    if os.path.isfile(alternative):
+                        path = alternative
+                        break
             alias = f"ps5pfs_{threading.get_ident()}_{int(time.time() * 1000)}"
 
             try:
