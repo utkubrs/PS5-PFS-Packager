@@ -37,7 +37,7 @@ Download the latest Windows package from the repository's **Releases** page.
 The release asset is named:
 
 ```text
-PS5-PFS-Packager-v2.20.0-Windows-x64.zip
+PS5-PFS-Packager-v2.21.0-Windows-x64.zip
 ```
 
 After downloading:
@@ -295,3 +295,12 @@ Platform PKG extraction may still fail for encrypted/proprietary PKGs. Windows e
 - GitHub Actions runs `PS5-PFS-Packager.exe --internal-mkpfs --help` as a subprocess and **blocks publication** if it fails.
 - The Windows ZIP contains the entire standalone application folder, its DLLs, and the optional PS4 PKG extractor in `tools/`. **Keep all these files together**; do not move only the EXE.
 - Build and smoke test success are not a substitute for real PS4/PS5 console verification.
+
+
+## v2.21.0 – hidden extraction and automatic platform selection
+
+- Windows PKG extraction now sets CREATE_NO_WINDOW and hides the external pkgextract console, with approximate size-based progress messages inside the main program log.
+- Automatically selects PS4 for sources with sce_sys/param.sfo or CUSA identifiers, and PS5 for folders with sce_sys/param.json or PPSA identifiers. Unidentified sources keep the manually selected platform; a generic .pkg defaults to PS4.
+- The PS4 merge window selects PS4 automatically. The same source-change detection applies in normal single-file conversion.
+- Original MP3 playback logs whether completion.mp3/error.mp3 were found and the Windows playback error if present. **The audio binary assets are not committed to this repository**. Put both files beside the EXE or into the assets directory to get the original cues. Log diagnostics do not make unavailable sound assets appear automatically.
+- MkPFS remains 1.1.0; real Windows execution and console compatibility still require verification.
