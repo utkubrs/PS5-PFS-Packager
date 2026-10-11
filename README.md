@@ -37,7 +37,7 @@ Download the latest Windows package from the repository's **Releases** page.
 The release asset is named:
 
 ```text
-PS5-PFS-Packager-v2.22.0-Windows-x64.zip
+PS5-PFS-Packager-v2.23.0-Windows-x64.zip
 ```
 
 After downloading:
@@ -309,3 +309,12 @@ Platform PKG extraction may still fail for encrypted/proprietary PKGs. Windows e
 ## v2.22.0 PS4 merge title fix
 
 Fixed a Python `UnboundLocalError` caused by reassigning the merge dialog TITLE within the background worker's scope. The merge now uses a local `effective_title`; explicitly entered names are preserved and the base game's PARAM.SFO remains the fallback. Previously extracted game/update folders can be selected directly with the **Klasör** buttons after checking that extraction completed. Do not use incomplete extraction folders.
+
+
+## v2.23.0 – integrated PS4 merge progress
+
+- Clicking **Birleştir ve Kaynak Olarak Seç** closes its small modal immediately and tracks the merge on the main window.
+- Main progress bar/status shows actual bytes copied, total copy workload in GiB, and completed/total file count. Copy progress is based on byte counts, not a guessed compression percentage. Update files excluded by the base-artwork protection are not counted as work.
+- The main log periodically records merge milestones. Upon completion the merged folder becomes the active source; the user starts FFPFSC packaging separately.
+- A concurrent conversion cannot be started while merge is running. Existing source folders are untouched.
+- Large directory trees require an initial size inventory before copying starts, which may take time. Windows build success and console game compatibility still require confirmation.
