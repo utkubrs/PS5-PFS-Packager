@@ -7631,6 +7631,10 @@ class App(tk.Tk):
                     if os.path.isfile(alternative):
                         path = alternative
                         break
+            if not os.path.isfile(path):
+                self._qlog("Original MP3 missing: " + filename + " (place it beside the EXE or in assets/)", "warn")
+            else:
+                self._qlog("Original MP3 found: " + path, "info")
             alias = f"ps5pfs_{threading.get_ident()}_{int(time.time() * 1000)}"
 
             try:
@@ -7664,7 +7668,8 @@ class App(tk.Tk):
                     except Exception:
                         pass
                 return
-            except Exception:
+            except Exception as exc:
+                self._qlog("MP3 playback failed (" + filename + "): " + str(exc), "warn")
                 # MP3 çalınamazsa sessiz kalmak yerine yerleşik Windows sesi kullan.
                 try:
                     import winsound
