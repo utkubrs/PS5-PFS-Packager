@@ -6514,7 +6514,9 @@ class App(tk.Tk):
                     result = merge_ps4_folders(game_dir, update_dir, dst, effective_title, progress=progress)
                     def done():
                         self.source_var.set(result["folder"])
-                        self.auto_file_name(silent=True)
+                        # Source change performs auto-naming; restore the explicitly
+                        # selected FFPFSC output name from the merge dialog.
+                        self.file_name_var.set(output_name)
                         self._ps4_merge_busy = False
                         self._qprogress(100)
                         self._qstatus(mt("done"))
