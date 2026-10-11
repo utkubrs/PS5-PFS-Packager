@@ -62,7 +62,7 @@ def detect_logical_cpu_count() -> int:
     except Exception:
         return 1
 
-APP_VERSION = "2.14"
+APP_VERSION = "2.15"
 APP_TITLE = "PS5 PFS Paketleyici"
 
 MKPFS_RELEASES_URL = "https://github.com/PSBrew/MkPFS/releases"
@@ -3002,7 +3002,7 @@ def discover_conversion_targets(root: str, max_depth: int = 3) -> list[str]:
     def scan(folder: str, depth: int) -> None:
         if depth > max_depth:
             return
-        if is_valid_ps5_game_folder(folder):
+        if is_valid_ps5_game_folder(folder) or is_ps4_game_folder(folder):
             found.append(normalize_path(folder))
             return
         try:
@@ -3011,7 +3011,7 @@ def discover_conversion_targets(root: str, max_depth: int = 3) -> list[str]:
             return
         for entry in entries:
             try:
-                if entry.is_file() and entry.name.lower().endswith(".exfat"):
+                if entry.is_file() and entry.name.lower().endswith((".exfat", ".ffpkg", ".pkg")):
                     found.append(normalize_path(entry.path))
                 elif entry.is_dir(follow_symlinks=False) and not entry.name.startswith("."):
                     scan(entry.path, depth + 1)
@@ -3382,7 +3382,7 @@ def read_title_id_from_game_folder(folder: str) -> str | None:
                     return m.group(0) if m else safe_filename(value)
             except Exception:
                 continue
-    return None
+    return detect_ps4_title_id(folder) or None
 
 
 def derive_output_name(source: str) -> str:
@@ -3393,13 +3393,13 @@ def derive_output_name(source: str) -> str:
             return f"{title_id}.ffpfsc"
         base = os.path.basename(source.rstrip("\\/"))
         # Common folders like PPSA17330-app0 -> PPSA17330.ffpfsc
-        m = re.search(r"(PPSA\d{5})", base.upper())
+        m = re.search(r"((?:PPSA|CUSA)\d{5})", base.upper())
         if m:
             return f"{m.group(1)}.ffpfsc"
         return f"{safe_filename(base)}.ffpfsc"
     else:
         base = os.path.splitext(os.path.basename(source))[0]
-        m = re.search(r"(PPSA\d{5})", base.upper())
+        m = re.search(r"((?:PPSA|CUSA)\d{5})", base.upper())
         if m:
             return f"{m.group(1)}.ffpfsc"
         return f"{safe_filename(base)}.ffpfsc"
@@ -3590,6 +3590,7 @@ def run_internal_mkpfs(args: list[str]) -> int:
 
 
 from upgrade_features import inspect_game, validate_preflight, recommended_block_size
+from ps4_inputs import is_ps4_game_folder, detect_ps4_title_id, extract_pkg
 
 class App(tk.Tk):
     def __init__(self):
@@ -6725,8 +6726,28 @@ class App(tk.Tk):
                 if batch:
                     self._qgame_counter(index, len(targets))
                 previous_size = get_path_size(target)
+                # Extraction is optional, uses an independently installed pkgextract CLI.
+                # Keep the original PKG untouched. Staged content remains in selected TEMP.
+                if os.path.isfile(target) and target.lower().endswith(".pkg"):
+                    if platform != "PS4":
+                        self._qlog("PS4 .pkg requires PS4 platform selection.", "error")
+                        play_error_once()
+                        continue
+                    try:
+                        original_pkg = target
+                        target = extract_pkg(target, temp_dir, lambda message: self._qlog(message, "info"))
+                        self._qlog(f"PKG extracted: {original_pkg} -> {target}", "success")
+                        self._qlog("Extracted files remain in TEMP for inspection and manual cleanup.", "warn")
+                    except Exception as exc:
+                        self._qlog(f"PS4 PKG extraction failed: {exc}", "error")
+                        play_error_once()
+                        continue
+                if os.path.isdir(target) and platform == "PS4" and not is_ps4_game_folder(target):
+                    self._qlog("Invalid PS4 folder: requires eboot.bin and sce_sys/param.sfo", "error")
+                    play_error_once()
+                    continue
                 is_folder_source = os.path.isdir(target)
-                is_exfat_source = os.path.isfile(target) and target.lower().endswith(".exfat")
+                is_exfat_source = os.path.isfile(target) and target.lower().endswith((".exfat", ".ffpkg"))
 
                 operation_start = time.perf_counter()
                 self._qprogress(0)
@@ -6741,7 +6762,7 @@ class App(tk.Tk):
                 elif is_exfat_source:
                     self._qlog(self.tr("exfat_method_log"), "muted")
 
-                if add_fakelib:
+                if add_fakelib and platform == "PS5":
                     if not ensure_fakelib_files(target, self._qlog, self.tr, self.tr_format):
                         self._qlog(self.tr("fakelib_skip"), "error")
                         play_error_once()
@@ -6836,7 +6857,7 @@ class App(tk.Tk):
                         "--no-adjust-output-file-extension",
                         "--version", platform,
                         "--inode-bits", "32",
-                        "--require-game-files",
+                        *(["--require-game-files"] if platform == "PS5" else []),
                         "--temp-folder", temp_dir,
                         "--cpu-count", str(cpu),
                         "--compression-level", str(compression_level),
