@@ -1,4 +1,5 @@
 name: Build and publish Windows package
+# v2.19.0 release build: one push-triggered run for workflow changes; manual thereafter.
 
 on:
   push:
