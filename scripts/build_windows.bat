@@ -36,6 +36,14 @@ echo [4/4] Preparing application icon...
 if errorlevel 1 goto :error
 
 echo [4/4] Building EXE with Nuitka...
+set "SOUND_ARGS="
+if exist "assets\completion.mp3" if exist "assets\error.mp3" (
+  set "SOUND_ARGS=--include-data-files=assets\completion.mp3=completion.mp3 --include-data-files=assets\error.mp3=error.mp3"
+  echo [INFO] Original MP3 sound effects included.
+) else (
+  echo [WARN] Original completion.mp3/error.mp3 missing from assets; using application fallback sounds.
+)
+
 "%PY%" -m nuitka ^
   --mode=onefile ^
   --onefile-no-compression ^
@@ -43,6 +51,7 @@ echo [4/4] Building EXE with Nuitka...
   --assume-yes-for-downloads ^
   --enable-plugin=tk-inter ^
   --windows-console-mode=disable ^
+  %SOUND_ARGS% ^
   --windows-uac-admin ^
   --windows-icon-from-ico=assets\appicon.ico ^
   --include-data-files=assets\appicon.ico=appicon.ico ^
