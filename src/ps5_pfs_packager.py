@@ -7196,6 +7196,12 @@ class App(tk.Tk):
         env = os.environ.copy()
         env["PYTHONIOENCODING"] = "utf-8"
         env["PYTHONUNBUFFERED"] = "1"
+        # Force child Python/system temporary files to the user's selected work drive.
+        selected_temp = normalize_path(self.temp_dir_var.get().strip())
+        if selected_temp and os.path.isdir(selected_temp):
+            env["TEMP"] = selected_temp
+            env["TMP"] = selected_temp
+            env["TMPDIR"] = selected_temp
 
         last_seen: dict[str, int] = {}
         last_mapped_progress = progress_offset
