@@ -6224,7 +6224,7 @@ class App(tk.Tk):
     def _pick_single_exfat_file(self):
         path = filedialog.askopenfilename(
             title=self.tr("dialog_select_exfat"),
-            filetypes=[("exFAT image", "*.exfat"), (self.tr("dialog_all_files"), "*.*")],
+            filetypes=[("Supported images and PS4 packages", "*.exfat *.ffpkg *.pkg"), ("exFAT", "*.exfat"), ("FFPKG", "*.ffpkg"), ("PS4 PKG", "*.pkg"), (self.tr("dialog_all_files"), "*.*")],
             parent=self,
         )
         if path:
@@ -6244,7 +6244,7 @@ class App(tk.Tk):
         except Exception:
             pass
 
-        width, height = 520, 300
+        width, height = 520, 330
         self.update_idletasks()
         modal.update_idletasks()
 
@@ -6301,7 +6301,7 @@ class App(tk.Tk):
 
         exfat_button = tk.Button(
             button_frame,
-            text="💿  " + self.tr("choose_exfat_file"),
+            text="💿  exFAT / FFPKG / PS4 PKG",
             command=lambda: close_and_open(self._pick_single_exfat_file),
             bg="#7c3aed",
             fg="white",
