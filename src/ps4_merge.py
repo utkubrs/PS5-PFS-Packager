@@ -70,7 +70,7 @@ def sfo_fields_from_bytes(data: bytes):
     return {key:(data[offset:offset+length].split(b"\0",1)[0].decode("utf-8","replace") if fmt==0x0204 else data[offset:offset+length].hex())
             for key,fmt,length,maximum,offset,_ in _parse_sfo(data)}
 
-def merge_ps4_folders(base: str, update: str, destination: str, title: str="") -> dict:
+def merge_ps4_folders(base: str, update: str, destination: str, title: str="", progress=None) -> dict:
     base,update,destination=map(lambda p:Path(p).resolve(),(base,update,destination))
     if not base.is_dir() or not (base/"eboot.bin").is_file() or not (base/"sce_sys"/"param.sfo").is_file():
         raise ValueError("Base must contain eboot.bin and sce_sys/param.sfo")
@@ -84,8 +84,36 @@ def merge_ps4_folders(base: str, update: str, destination: str, title: str="") -
         raise ValueError("PS4 TITLE_ID mismatch between base game and update")
     if update_fields.get("CATEGORY") not in ("gp","gd",None):
         raise ValueError("Update CATEGORY is not a recognized PS4 game patch")
+    def update_file(rel):
+        return not (rel.parts and rel.parts[0].lower() == "sce_sys"
+                    and rel.name.lower() in ARTWORK.union({"param.sfo"}))
+
+    # Count work before copying so the UI can show real byte-based progress.
+    base_files = [p for p in base.rglob("*") if p.is_file()]
+    update_files = [p for p in update.rglob("*") if p.is_file()
+                    and update_file(p.relative_to(update))]
+    total = sum(p.stat().st_size for p in base_files + update_files)
+    total_files = len(base_files) + len(update_files)
+    copied = 0
+    done_files = 0
+    def copy_with_progress(src, dst):
+        nonlocal copied, done_files
+        Path(dst).parent.mkdir(parents=True, exist_ok=True)
+        with open(src, "rb") as reader, open(dst, "wb") as writer:
+            while True:
+                chunk = reader.read(4 * 1024 * 1024)
+                if not chunk: break
+                writer.write(chunk)
+                copied += len(chunk)
+                if progress:
+                    progress(copied, total, done_files, total_files)
+        shutil.copystat(src, dst)
+        done_files += 1
+        if progress:
+            progress(copied, total, done_files, total_files)
+        return str(dst)
     try:
-        shutil.copytree(base,destination)
+        shutil.copytree(base,destination,copy_function=copy_with_progress)
         for root,dirs,files in os.walk(update):
             rel=Path(root).relative_to(update)
             target_dir=destination/rel
@@ -96,7 +124,7 @@ def merge_ps4_folders(base: str, update: str, destination: str, title: str="") -
                 if rel.parts and rel.parts[0].lower()=="sce_sys":
                     if filename.lower() in ARTWORK or filename.lower()=="param.sfo":
                         continue
-                shutil.copy2(Path(root)/filename,target_dir/filename)
+                copy_with_progress(Path(root)/filename,target_dir/filename)
         if title:
             edit_sfo_title(str(destination/"sce_sys"/"param.sfo"),title)
         return {"folder":str(destination),"title_id":base_fields.get("TITLE_ID",""),"title":title or base_fields.get("TITLE","")}
