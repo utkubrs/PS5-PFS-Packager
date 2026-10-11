@@ -1,5 +1,5 @@
 name: Build and publish Windows package
-# v2.24.0 – PS4 merge modal closes, live byte/file progress on main view.
+# v2.24.0: integrated output settings and 15-language merge/SFO interface.
 
 on:
   push:
