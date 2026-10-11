@@ -37,7 +37,7 @@ Download the latest Windows package from the repository's **Releases** page.
 The release asset is named:
 
 ```text
-PS5-PFS-Packager-v2.23.0-Windows-x64.zip
+PS5-PFS-Packager-v2.24.0-Windows-x64.zip
 ```
 
 After downloading:
@@ -318,3 +318,12 @@ Fixed a Python `UnboundLocalError` caused by reassigning the merge dialog TITLE 
 - The main log periodically records merge milestones. Upon completion the merged folder becomes the active source; the user starts FFPFSC packaging separately.
 - A concurrent conversion cannot be started while merge is running. Existing source folders are untouched.
 - Large directory trees require an initial size inventory before copying starts, which may take time. Windows build success and console game compatibility still require confirmation.
+
+
+## v2.24.0 – unified PS4 merge settings and localization
+
+- The PS4 game+update dialog now includes **Output folder**, **FFPFSC file name**, and **TEMP folder**, prefilled from the main window.
+- Confirmed values synchronize back to the main form. The selected FFPFSC file name is preserved even after the merged game folder becomes the source.
+- Localized the merge dialog, its status/error messages, main PS4 action buttons, and the PARAM.SFO title editor across all 15 UI languages.
+- Merge still closes the modal and reports byte/file progress in the main window; MkPFS packaging begins when the user clicks Convert.
+- GitHub Actions validates i18n coverage and builds the Windows x64 portable package. Download is available only after the workflow and release upload succeed.
