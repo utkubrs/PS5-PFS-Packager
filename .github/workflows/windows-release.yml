@@ -58,7 +58,11 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $exe = "dist/ps5_pfs_packager.dist/PS5-PFS-Packager.exe"
-          if (!(Test-Path $exe)) { throw "Standalone EXE missing" }
+          if (!(Test-Path $exe)) {
+            Write-Host 'Build output inventory:'
+            Get-ChildItem dist -Recurse -File | Select-Object -First 60 -ExpandProperty FullName
+            throw "Standalone EXE missing"
+          }
           $log = Join-Path $env:RUNNER_TEMP 'mkpfs-smoke.txt'
           $err = Join-Path $env:RUNNER_TEMP 'mkpfs-smoke-error.txt'
           $proc = Start-Process -FilePath (Resolve-Path $exe) -ArgumentList @('--internal-mkpfs','--help') -RedirectStandardOutput $log -RedirectStandardError $err -Wait -PassThru
