@@ -4650,10 +4650,10 @@ class App(tk.Tk):
                     return "PS5"
             if os.path.isfile(source):
                 base = os.path.basename(source).upper()
-                if re.search(r"CUSA\\d{5}", base) or base.endswith(".PKG"):
-                    return "PS4"
                 if re.search(r"PPSA\\d{5}", base):
                     return "PS5"
+                if re.search(r"CUSA\\d{5}", base) or base.endswith(".PKG"):
+                    return "PS4"
         except OSError:
             pass
         return None
