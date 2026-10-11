@@ -62,7 +62,7 @@ def detect_logical_cpu_count() -> int:
     except Exception:
         return 1
 
-APP_VERSION = "2.22"
+APP_VERSION = "2.23"
 APP_TITLE = "PS5 PFS Paketleyici"
 
 MKPFS_RELEASES_URL = "https://github.com/PSBrew/MkPFS/releases"
@@ -4773,7 +4773,7 @@ class App(tk.Tk):
         return bool(discover_conversion_targets(src, max_depth=3))
 
     def _is_ready_to_start(self) -> bool:
-        if self.mount_busy or self.mount_session is not None:
+        if self.mount_busy or self.mount_session is not None or getattr(self, "_ps4_merge_busy", False):
             return False
 
         src = normalize_path(self.source_var.get().strip())
@@ -4791,7 +4791,7 @@ class App(tk.Tk):
 
     def _update_start_button_state(self):
         try:
-            if self.is_running or self.mount_busy:
+            if self.is_running or self.mount_busy or getattr(self, "_ps4_merge_busy", False):
                 running_text = self.tr("multi_running") if self.batch_var.get() else self.tr("single_running")
                 self.start_button.configure(
                     text=running_text,
@@ -6421,6 +6421,8 @@ class App(tk.Tk):
         status = tk.StringVar(value="Hazır")
         tk.Label(dlg, textvariable=status, bg="#151515", fg="#a7f3d0").pack(pady=4)
         def merge():
+            if getattr(self, "_ps4_merge_busy", False):
+                return
             if str(self.platform_var.get()).upper() != "PS4":
                 messagebox.showerror("PS4", "Önce Platform = PS4 seçin.", parent=dlg)
                 return
@@ -6429,8 +6431,13 @@ class App(tk.Tk):
             if not base or not patch or not os.path.isdir(temp):
                 messagebox.showerror("PS4", "Ana oyun, update ve mevcut TEMP klasörü gerekli.", parent=dlg)
                 return
-            btn.configure(state="disabled")
-            status.set("Çıkarılıyor / birleştiriliyor... Lütfen bekleyin.")
+            self._ps4_merge_busy = True
+            dlg.destroy()
+            self._qphase("PS4 oyun + update birleştirme")
+            self._qstatus("Birleştirme hazırlanıyor...")
+            self._qprogress(0)
+            self._qlog("PS4 birleştirme başladı. İlerleme bu ekranda gösterilecek.", "title")
+            self._update_start_button_state()
             def worker():
                 try:
                     import uuid
@@ -6452,20 +6459,42 @@ class App(tk.Tk):
                             effective_title = (sfo_fields(os.path.join(game_dir, "sce_sys", "param.sfo")).get("TITLE", "") or effective_title)
                         except (OSError, ValueError):
                             pass
-                    result = merge_ps4_folders(game_dir, update_dir, dst, effective_title)
+                    import time
+                    last_report = [0.0]
+                    def progress(copied, total, files, count):
+                        now = time.monotonic()
+                        if now - last_report[0] < 0.35 and copied < total:
+                            return
+                        last_report[0] = now
+                        percent = min(100.0, 100.0 * copied / max(1, total))
+                        msg = (f"PS4 birleştirme %{percent:.1f} | "
+                               f"{copied / 1024**3:.2f}/{total / 1024**3:.2f} GB | "
+                               f"{files}/{count} dosya")
+                        self._qprogress(percent)
+                        self._qstatus(msg)
+                        if now - getattr(self, "_merge_last_log", 0) >= 5:
+                            self._merge_last_log = now
+                            self._qlog(msg, "info")
+                    self._qphase("Oyun ve update dosyaları kopyalanıyor")
+                    result = merge_ps4_folders(game_dir, update_dir, dst, effective_title, progress=progress)
                     def done():
                         self.source_var.set(result["folder"])
                         self.auto_file_name(silent=True)
+                        self._ps4_merge_busy = False
+                        self._qprogress(100)
+                        self._qstatus("PS4 birleştirme tamamlandı. FFPFSC için Dönüştür'e basın.")
                         self._log("PS4 birleşimi hazır: " + result["folder"], "success")
-                        dlg.destroy()
-                        messagebox.showinfo("PS4", "Birleşim hazır. FFPFSC için Tek Oyunu Dönüştür'e basın.")
+                        self._update_start_button_state()
+                        messagebox.showinfo("PS4", "Birleşim tamamlandı. FFPFSC için Tek Oyunu Dönüştür'e basın.")
                     self.after(0, done)
                 except Exception as exc:
                     error = str(exc)
                     def failed():
-                        status.set("Hata: " + error)
-                        btn.configure(state="normal")
-                        messagebox.showerror("Birleştirme hatası", error, parent=dlg)
+                        self._ps4_merge_busy = False
+                        self._qstatus("PS4 birleştirme başarısız")
+                        self._log("PS4 birleştirme hatası: " + error, "error")
+                        self._update_start_button_state()
+                        messagebox.showerror("Birleştirme hatası", error, parent=self)
                     self.after(0, failed)
             threading.Thread(target=worker, daemon=True).start()
         btn = tk.Button(dlg, text="Birleştir ve Kaynak Olarak Seç", command=merge,
