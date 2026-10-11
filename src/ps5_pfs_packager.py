@@ -62,7 +62,7 @@ def detect_logical_cpu_count() -> int:
     except Exception:
         return 1
 
-APP_VERSION = "2.13"
+APP_VERSION = "2.14"
 APP_TITLE = "PS5 PFS Paketleyici"
 
 MKPFS_RELEASES_URL = "https://github.com/PSBrew/MkPFS/releases"
@@ -3589,6 +3589,8 @@ def run_internal_mkpfs(args: list[str]) -> int:
         return 1
 
 
+from upgrade_features import inspect_game, validate_preflight, recommended_block_size
+
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -3957,6 +3959,10 @@ class App(tk.Tk):
             font=("Segoe UI", 10, "bold"),
             width=16,
         ).pack(side="right", padx=(0, 10), pady=(8, 0))
+
+        self.game_preview_label = tk.Label(self, text="Game preview: choose a source folder", bg="#151515", fg="#a7f3d0", anchor="w", font=("Segoe UI", 10))
+        self.game_preview_label.pack(fill="x", padx=34, pady=(0, 5))
+        self.game_preview_image = None
 
         self.mode_tab_frame = tk.Frame(self, bg="#151515")
         self.mode_tab_frame.pack(fill="x", padx=34, pady=(0, 10))
@@ -4579,7 +4585,26 @@ class App(tk.Tk):
         except Exception:
             pass
 
+    def _refresh_game_preview(self):
+        """Display source title, title ID and available PNG icon; no network fetch."""
+        try:
+            info = inspect_game(self.source_var.get().strip())
+            details = " | ".join(x for x in (info["title"], info["title_id"]) if x)
+            self.game_preview_label.configure(text="Game: " + details, image="", compound="left")
+            self.game_preview_image = None
+            if info["icon"]:
+                try:
+                    pic = tk.PhotoImage(file=info["icon"])
+                    factor = max(1, (max(pic.width(), pic.height()) + 47) // 48)
+                    self.game_preview_image = pic.subsample(factor, factor)
+                    self.game_preview_label.configure(image=self.game_preview_image, compound="left")
+                except tk.TclError:
+                    pass
+        except Exception:
+            pass
+
     def _on_source_changed(self):
+        self._refresh_game_preview()
         if self.batch_var.get():
             self.update_batch_preview()
         else:
@@ -7143,6 +7168,20 @@ class App(tk.Tk):
         return t
 
     def _run_mkpfs(self, mkpfs_args: list[str], progress_offset: int = 0, progress_scale: int = 100) -> int:
+        if len(mkpfs_args) >= 2 and mkpfs_args[0] == "pack":
+            tmp_path = normalize_path(self.temp_dir_var.get().strip())
+            output_path = normalize_path(self.output_dir_var.get().strip())
+            source_path = normalize_path(self.source_var.get().strip())
+            issues = validate_preflight(tmp_path, output_path, source_path)
+            if issues:
+                for issue in issues:
+                    self._qlog("Preflight: " + issue, "error")
+                return 1
+            if str(self.platform_var.get()).upper() == "PS5" and "--raw" in mkpfs_args:
+                self._qlog("Safety check: compressed raw PFS for PS5 is not allowed.", "error")
+                return 1
+            if str(self.block_size_var.get()) == "auto":
+                self._qlog("MkPFS auto block size retained (recommended for compatibility).", "info")
         cmd = self._command_prefix() + mkpfs_args
         self._qlog(">>> " + " ".join(cmd), "cmd")
         self._qstatus(self.tr("mkpfs_started"))
