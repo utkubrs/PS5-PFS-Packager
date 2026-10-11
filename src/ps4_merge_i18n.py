@@ -1,6 +1,12 @@
 """Translations for PS4 merge controls in all 15 supported languages."""
 TRANSLATIONS = {
   "tr": {
+    "sfo_button": "PARAM.SFO Düzenle",
+    "sfo_title": "PARAM.SFO – TITLE düzenle",
+    "sfo_game_title": "Oyun adı (TITLE)",
+    "save": "Kaydet",
+    "sfo_saved": "TITLE güncellendi; kimlik alanları korundu.",
+    "select_sfo": "param.sfo seç",
     "merge_title": "PS4 Oyun + Update Birleştir",
     "base": "Ana oyun (.pkg / klasör)",
     "patch": "Update (.pkg / klasör)",
@@ -27,6 +33,12 @@ TRANSLATIONS = {
     "directory_error": "Çıkış ve TEMP klasörlerini kontrol edin."
   },
   "en": {
+    "sfo_button": "Edit PARAM.SFO",
+    "sfo_title": "PARAM.SFO – edit TITLE",
+    "sfo_game_title": "Game title (TITLE)",
+    "save": "Save",
+    "sfo_saved": "TITLE updated; identity fields preserved.",
+    "select_sfo": "Select param.sfo",
     "merge_title": "Merge PS4 Game + Update",
     "base": "Base game (.pkg / folder)",
     "patch": "Update (.pkg / folder)",
@@ -53,6 +65,12 @@ TRANSLATIONS = {
     "directory_error": "Check output and TEMP folders."
   },
   "fr": {
+    "sfo_button": "Modifier PARAM.SFO",
+    "sfo_title": "PARAM.SFO – modifier TITLE",
+    "sfo_game_title": "Titre du jeu (TITLE)",
+    "save": "Enregistrer",
+    "sfo_saved": "TITLE modifié ; identifiants conservés.",
+    "select_sfo": "Choisir param.sfo",
     "merge_title": "Fusionner jeu PS4 + mise à jour",
     "base": "Jeu de base (.pkg / dossier)",
     "patch": "Mise à jour (.pkg / dossier)",
@@ -79,6 +97,12 @@ TRANSLATIONS = {
     "directory_error": "Vérifiez sortie et TEMP."
   },
   "es": {
+    "sfo_button": "Editar PARAM.SFO",
+    "sfo_title": "PARAM.SFO – editar TITLE",
+    "sfo_game_title": "Título del juego (TITLE)",
+    "save": "Guardar",
+    "sfo_saved": "TITLE actualizado; identificadores conservados.",
+    "select_sfo": "Elegir param.sfo",
     "merge_title": "Combinar juego PS4 + actualización",
     "base": "Juego base (.pkg / carpeta)",
     "patch": "Actualización (.pkg / carpeta)",
@@ -105,6 +129,12 @@ TRANSLATIONS = {
     "directory_error": "Revise salida y TEMP."
   },
   "it": {
+    "sfo_button": "Modifica PARAM.SFO",
+    "sfo_title": "PARAM.SFO – modifica TITLE",
+    "sfo_game_title": "Titolo gioco (TITLE)",
+    "save": "Salva",
+    "sfo_saved": "TITLE aggiornato; identificativi invariati.",
+    "select_sfo": "Scegli param.sfo",
     "merge_title": "Unisci gioco PS4 + aggiornamento",
     "base": "Gioco base (.pkg / cartella)",
     "patch": "Aggiornamento (.pkg / cartella)",
@@ -131,6 +161,12 @@ TRANSLATIONS = {
     "directory_error": "Controlla uscita e TEMP."
   },
   "de": {
+    "sfo_button": "PARAM.SFO bearbeiten",
+    "sfo_title": "PARAM.SFO – TITLE bearbeiten",
+    "sfo_game_title": "Spieltitel (TITLE)",
+    "save": "Speichern",
+    "sfo_saved": "TITLE geändert; Kennungen bleiben erhalten.",
+    "select_sfo": "param.sfo wählen",
     "merge_title": "PS4-Spiel + Update zusammenführen",
     "base": "Basisspiel (.pkg / Ordner)",
     "patch": "Update (.pkg / Ordner)",
@@ -157,6 +193,12 @@ TRANSLATIONS = {
     "directory_error": "Ausgabe und TEMP prüfen."
   },
   "pt": {
+    "sfo_button": "Editar PARAM.SFO",
+    "sfo_title": "PARAM.SFO – editar TITLE",
+    "sfo_game_title": "Título do jogo (TITLE)",
+    "save": "Salvar",
+    "sfo_saved": "TITLE atualizado; identificadores mantidos.",
+    "select_sfo": "Selecionar param.sfo",
     "merge_title": "Unir jogo PS4 + atualização",
     "base": "Jogo base (.pkg / pasta)",
     "patch": "Atualização (.pkg / pasta)",
@@ -183,6 +225,12 @@ TRANSLATIONS = {
     "directory_error": "Confira saída e TEMP."
   },
   "nl": {
+    "sfo_button": "PARAM.SFO bewerken",
+    "sfo_title": "PARAM.SFO – TITLE bewerken",
+    "sfo_game_title": "Speltitel (TITLE)",
+    "save": "Opslaan",
+    "sfo_saved": "TITLE aangepast; identiteitsvelden behouden.",
+    "select_sfo": "Kies param.sfo",
     "merge_title": "PS4-game + update samenvoegen",
     "base": "Basisspel (.pkg / map)",
     "patch": "Update (.pkg / map)",
@@ -209,6 +257,12 @@ TRANSLATIONS = {
     "directory_error": "Controleer uitvoer en TEMP."
   },
   "pl": {
+    "sfo_button": "Edytuj PARAM.SFO",
+    "sfo_title": "PARAM.SFO – edytuj TITLE",
+    "sfo_game_title": "Tytuł gry (TITLE)",
+    "save": "Zapisz",
+    "sfo_saved": "TITLE zmieniony; identyfikatory zachowane.",
+    "select_sfo": "Wybierz param.sfo",
     "merge_title": "Połącz grę PS4 i aktualizację",
     "base": "Gra podstawowa (.pkg / folder)",
     "patch": "Aktualizacja (.pkg / folder)",
@@ -235,6 +289,12 @@ TRANSLATIONS = {
     "directory_error": "Sprawdź wyjście i TEMP."
   },
   "ru": {
+    "sfo_button": "Изменить PARAM.SFO",
+    "sfo_title": "PARAM.SFO – изменить TITLE",
+    "sfo_game_title": "Название игры (TITLE)",
+    "save": "Сохранить",
+    "sfo_saved": "TITLE обновлён; идентификаторы сохранены.",
+    "select_sfo": "Выберите param.sfo",
     "merge_title": "Объединить игру PS4 и обновление",
     "base": "Основная игра (.pkg / папка)",
     "patch": "Обновление (.pkg / папка)",
@@ -261,6 +321,12 @@ TRANSLATIONS = {
     "directory_error": "Проверьте папки вывода и TEMP."
   },
   "zh": {
+    "sfo_button": "编辑 PARAM.SFO",
+    "sfo_title": "PARAM.SFO – 编辑 TITLE",
+    "sfo_game_title": "游戏名称 (TITLE)",
+    "save": "保存",
+    "sfo_saved": "TITLE 已更新；身份字段已保留。",
+    "select_sfo": "选择 param.sfo",
     "merge_title": "合并 PS4 游戏和更新",
     "base": "基础游戏（.pkg / 文件夹）",
     "patch": "更新（.pkg / 文件夹）",
@@ -287,6 +353,12 @@ TRANSLATIONS = {
     "directory_error": "检查输出和 TEMP 文件夹。"
   },
   "ja": {
+    "sfo_button": "PARAM.SFO を編集",
+    "sfo_title": "PARAM.SFO – TITLE を編集",
+    "sfo_game_title": "ゲーム名 (TITLE)",
+    "save": "保存",
+    "sfo_saved": "TITLE を更新しました。識別情報は保持されます。",
+    "select_sfo": "param.sfo を選択",
     "merge_title": "PS4 ゲームと更新を結合",
     "base": "基本ゲーム（.pkg / フォルダー）",
     "patch": "更新（.pkg / フォルダー）",
@@ -313,6 +385,12 @@ TRANSLATIONS = {
     "directory_error": "出力先と TEMP を確認してください。"
   },
   "ko": {
+    "sfo_button": "PARAM.SFO 편집",
+    "sfo_title": "PARAM.SFO – TITLE 편집",
+    "sfo_game_title": "게임 제목 (TITLE)",
+    "save": "저장",
+    "sfo_saved": "TITLE을 변경했으며 식별자는 유지했습니다.",
+    "select_sfo": "param.sfo 선택",
     "merge_title": "PS4 게임 + 업데이트 병합",
     "base": "기본 게임(.pkg / 폴더)",
     "patch": "업데이트(.pkg / 폴더)",
@@ -339,6 +417,12 @@ TRANSLATIONS = {
     "directory_error": "출력과 TEMP 폴더를 확인하세요."
   },
   "el": {
+    "sfo_button": "Επεξεργασία PARAM.SFO",
+    "sfo_title": "PARAM.SFO – επεξεργασία TITLE",
+    "sfo_game_title": "Τίτλος παιχνιδιού (TITLE)",
+    "save": "Αποθήκευση",
+    "sfo_saved": "Το TITLE άλλαξε· τα στοιχεία ταυτότητας διατηρήθηκαν.",
+    "select_sfo": "Επιλογή param.sfo",
     "merge_title": "Συγχώνευση παιχνιδιού PS4 + ενημέρωσης",
     "base": "Βασικό παιχνίδι (.pkg / φάκελος)",
     "patch": "Ενημέρωση (.pkg / φάκελος)",
@@ -365,6 +449,12 @@ TRANSLATIONS = {
     "directory_error": "Ελέγξτε εξόδου και TEMP."
   },
   "ar": {
+    "sfo_button": "تحرير PARAM.SFO",
+    "sfo_title": "PARAM.SFO – تحرير TITLE",
+    "sfo_game_title": "عنوان اللعبة (TITLE)",
+    "save": "حفظ",
+    "sfo_saved": "تم تحديث TITLE مع الحفاظ على المعرفات.",
+    "select_sfo": "اختيار param.sfo",
     "merge_title": "دمج لعبة PS4 والتحديث",
     "base": "اللعبة الأساسية (.pkg / مجلد)",
     "patch": "التحديث (.pkg / مجلد)",
