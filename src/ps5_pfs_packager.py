@@ -62,7 +62,7 @@ def detect_logical_cpu_count() -> int:
     except Exception:
         return 1
 
-APP_VERSION = "2.15"
+APP_VERSION = "2.16"
 APP_TITLE = "PS5 PFS Paketleyici"
 
 MKPFS_RELEASES_URL = "https://github.com/PSBrew/MkPFS/releases"
@@ -3591,6 +3591,7 @@ def run_internal_mkpfs(args: list[str]) -> int:
 
 from upgrade_features import inspect_game, validate_preflight, recommended_block_size
 from ps4_inputs import is_ps4_game_folder, detect_ps4_title_id, extract_pkg
+from ps4_merge import merge_ps4_folders, edit_sfo_title, sfo_fields
 
 class App(tk.Tk):
     def __init__(self):
@@ -3964,6 +3965,11 @@ class App(tk.Tk):
         self.game_preview_label = tk.Label(self, text="Game preview: choose a source folder", bg="#151515", fg="#a7f3d0", anchor="w", font=("Segoe UI", 10))
         self.game_preview_label.pack(fill="x", padx=34, pady=(0, 5))
         self.game_preview_image = None
+
+        ps4_tools = tk.Frame(self, bg="#151515")
+        ps4_tools.pack(fill="x", padx=34, pady=(0, 6))
+        tk.Button(ps4_tools, text="PS4 Oyun + Update Birleştir", command=self.show_ps4_merge_dialog, bg="#0e7490", fg="white", font=("Segoe UI",10,"bold")).pack(side="left", padx=(0,8))
+        tk.Button(ps4_tools, text="PARAM.SFO Düzenle", command=self.show_sfo_editor, bg="#334155", fg="white", font=("Segoe UI",10,"bold")).pack(side="left")
 
         self.mode_tab_frame = tk.Frame(self, bg="#151515")
         self.mode_tab_frame.pack(fill="x", padx=34, pady=(0, 10))
@@ -6332,6 +6338,70 @@ class App(tk.Tk):
         modal.lift()
         modal.focus_force()
         modal.grab_set()
+
+    def show_ps4_merge_dialog(self):
+        dlg = tk.Toplevel(self)
+        dlg.title("PS4 Oyun + Update Birleştir")
+        dlg.geometry("700x310")
+        dlg.configure(bg="#151515")
+        entries = []
+        for caption in ("Ana oyun klasörü", "Update klasörü", "Oyun adı (isteğe bağlı)"):
+            frame=tk.Frame(dlg,bg="#151515")
+            frame.pack(fill="x",padx=15,pady=5)
+            tk.Label(frame,text=caption,fg="white",bg="#151515",width=24,anchor="w").pack(side="left")
+            value=tk.StringVar()
+            tk.Entry(frame,textvariable=value,width=56).pack(side="left",fill="x",expand=True)
+            if len(entries)<2:
+                tk.Button(frame,text="Gözat",command=lambda v=value:v.set(filedialog.askdirectory(parent=dlg))).pack(side="left")
+            entries.append(value)
+        tk.Label(dlg,text="Kaynaklar korunur. Görseller ana oyundan alınır. TEMP üzerinde birleşik klasör hazırlanır.",bg="#151515",fg="#cbd5e1",wraplength=650).pack(pady=10)
+        def merge():
+            if str(self.platform_var.get()).upper()!="PS4":
+                messagebox.showerror("PS4","Önce Platform = PS4 seçin.",parent=dlg)
+                return
+            try:
+                import uuid
+                root=normalize_path(self.temp_dir_var.get().strip())
+                if not os.path.isdir(root):raise ValueError("Seçilen TEMP klasörü mevcut değil")
+                dst=os.path.join(root,"ps4_merge_"+uuid.uuid4().hex[:10])
+                result=merge_ps4_folders(entries[0].get(),entries[1].get(),dst,entries[2].get().strip())
+                self.source_var.set(result["folder"])
+                self.auto_file_name(silent=True)
+                self._log("PS4 birleşimi hazır: "+result["folder"],"success")
+                dlg.destroy()
+                messagebox.showinfo("PS4","Birleşik klasör hazır. FFPFSC üretmek için Dönüştür'e basın.")
+            except Exception as exc:
+                messagebox.showerror("Birleştirme hatası",str(exc),parent=dlg)
+        tk.Button(dlg,text="Birleştir ve Kaynak Olarak Seç",command=merge,bg="#16a34a",fg="white",font=("Segoe UI",11,"bold")).pack(pady=10)
+
+    def show_sfo_editor(self):
+        source=normalize_path(self.source_var.get().strip())
+        path=os.path.join(source,"sce_sys","param.sfo") if os.path.isdir(source) else source
+        if not os.path.isfile(path) or not path.lower().endswith(".sfo"):
+            path=filedialog.askopenfilename(title="param.sfo seç",filetypes=[("SFO","*.sfo")],parent=self)
+            if not path:return
+        try:
+            info=sfo_fields(path)
+        except Exception as exc:
+            messagebox.showerror("SFO",str(exc))
+            return
+        dlg=tk.Toplevel(self)
+        dlg.title("PARAM.SFO – yalnızca TITLE düzenleme")
+        dlg.geometry("590x260")
+        dlg.configure(bg="#151515")
+        for key in ("TITLE_ID","CONTENT_ID"):
+            tk.Label(dlg,text=key+": "+info.get(key,"-"),bg="#151515",fg="#cbd5e1").pack(anchor="w",padx=18,pady=5)
+        tk.Label(dlg,text="Oyun adı (TITLE)",bg="#151515",fg="white").pack(anchor="w",padx=18)
+        title=tk.StringVar(value=info.get("TITLE",""))
+        tk.Entry(dlg,textvariable=title,width=64).pack(padx=18,pady=8)
+        def save():
+            try:
+                edit_sfo_title(path,title.get())
+                messagebox.showinfo("SFO","TITLE güncellendi. TITLE_ID ve CONTENT_ID korunmuştur.",parent=dlg)
+                dlg.destroy()
+            except Exception as exc:
+                messagebox.showerror("SFO",str(exc),parent=dlg)
+        tk.Button(dlg,text="Kaydet",command=save,bg="#16a34a",fg="white").pack(pady=8)
 
     def pick_source(self):
         if self.batch_var.get():
