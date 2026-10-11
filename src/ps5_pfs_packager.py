@@ -6421,6 +6421,14 @@ class App(tk.Tk):
                     game_dir = stage(base)
                     update_dir = stage(patch)
                     dst = os.path.join(temp, "ps4_merge_" + uuid.uuid4().hex[:10])
+                    # Use actual PARAM.SFO title when the dialog still shows the
+                    # automatic filename suggestion; explicit user edits take precedence.
+                    original_name = os.path.splitext(os.path.basename(base))[0].replace("_", " ").replace("-", " ")
+                    if title == original_name:
+                        try:
+                            title = sfo_fields(os.path.join(game_dir, "sce_sys", "param.sfo")).get("TITLE", "") or title
+                        except (OSError, ValueError):
+                            pass
                     result = merge_ps4_folders(game_dir, update_dir, dst, title)
                     def done():
                         self.source_var.set(result["folder"])
