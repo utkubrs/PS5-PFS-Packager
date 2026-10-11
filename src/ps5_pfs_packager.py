@@ -62,7 +62,7 @@ def detect_logical_cpu_count() -> int:
     except Exception:
         return 1
 
-APP_VERSION = "2.16"
+APP_VERSION = "2.17"
 APP_TITLE = "PS5 PFS Paketleyici"
 
 MKPFS_RELEASES_URL = "https://github.com/PSBrew/MkPFS/releases"
@@ -3971,6 +3971,15 @@ class App(tk.Tk):
         tk.Button(ps4_tools, text="PS4 Oyun + Update Birleştir", command=self.show_ps4_merge_dialog, bg="#0e7490", fg="white", font=("Segoe UI",10,"bold")).pack(side="left", padx=(0,8))
         tk.Button(ps4_tools, text="PARAM.SFO Düzenle", command=self.show_sfo_editor, bg="#334155", fg="white", font=("Segoe UI",10,"bold")).pack(side="left")
 
+        self.ps4_title_var = tk.StringVar(value="")
+        title_row = tk.Frame(self, bg="#151515")
+        title_row.pack(fill="x", padx=34, pady=(0, 5))
+        tk.Label(title_row, text="PS4 oyun adı (TITLE):", fg="white",
+                 bg="#151515").pack(side="left")
+        tk.Entry(title_row, textvariable=self.ps4_title_var,
+                 width=45).pack(side="left", padx=10)
+        tk.Label(title_row, text="İsteğe bağlı; kaynak PKG değiştirilmez.",
+                 fg="#94a3b8", bg="#151515").pack(side="left")
         self.mode_tab_frame = tk.Frame(self, bg="#151515")
         self.mode_tab_frame.pack(fill="x", padx=34, pady=(0, 10))
 
@@ -6340,39 +6349,76 @@ class App(tk.Tk):
         modal.grab_set()
 
     def show_ps4_merge_dialog(self):
+        """Merge an extracted game/update pair, optionally extracting selected PS4 PKGs."""
         dlg = tk.Toplevel(self)
         dlg.title("PS4 Oyun + Update Birleştir")
-        dlg.geometry("700x310")
+        dlg.geometry("770x350")
         dlg.configure(bg="#151515")
         entries = []
-        for caption in ("Ana oyun klasörü", "Update klasörü", "Oyun adı (isteğe bağlı)"):
-            frame=tk.Frame(dlg,bg="#151515")
-            frame.pack(fill="x",padx=15,pady=5)
-            tk.Label(frame,text=caption,fg="white",bg="#151515",width=24,anchor="w").pack(side="left")
-            value=tk.StringVar()
-            tk.Entry(frame,textvariable=value,width=56).pack(side="left",fill="x",expand=True)
-            if len(entries)<2:
-                tk.Button(frame,text="Gözat",command=lambda v=value:v.set(filedialog.askdirectory(parent=dlg))).pack(side="left")
+        for caption in ("Ana oyun (.pkg / klasör)", "Update (.pkg / klasör)", "Oyun adı / TITLE (isteğe bağlı)"):
+            frame = tk.Frame(dlg, bg="#151515")
+            frame.pack(fill="x", padx=15, pady=6)
+            tk.Label(frame, text=caption, fg="white", bg="#151515",
+                     width=29, anchor="w").pack(side="left")
+            value = tk.StringVar()
+            tk.Entry(frame, textvariable=value, width=52).pack(side="left", fill="x", expand=True)
+            if len(entries) < 2:
+                def browse(v=value):
+                    selected = filedialog.askopenfilename(
+                        parent=dlg, title="PS4 PKG dosyası seç",
+                        filetypes=[("PS4 PKG", "*.pkg"), ("Tüm dosyalar", "*.*")])
+                    if selected:
+                        v.set(selected)
+                tk.Button(frame, text="PKG Seç", command=browse).pack(side="left", padx=3)
+                tk.Button(frame, text="Klasör", command=lambda v=value:
+                          v.set(filedialog.askdirectory(parent=dlg) or v.get())).pack(side="left")
             entries.append(value)
-        tk.Label(dlg,text="Kaynaklar korunur. Görseller ana oyundan alınır. TEMP üzerinde birleşik klasör hazırlanır.",bg="#151515",fg="#cbd5e1",wraplength=650).pack(pady=10)
+        tk.Label(dlg, text="PKG çıkarımı ve birleşim seçili TEMP klasöründe yapılır. Ana oyun görselleri korunur.",
+                 bg="#151515", fg="#cbd5e1", wraplength=710).pack(pady=12)
+        status = tk.StringVar(value="Hazır")
+        tk.Label(dlg, textvariable=status, bg="#151515", fg="#a7f3d0").pack(pady=4)
         def merge():
-            if str(self.platform_var.get()).upper()!="PS4":
-                messagebox.showerror("PS4","Önce Platform = PS4 seçin.",parent=dlg)
+            if str(self.platform_var.get()).upper() != "PS4":
+                messagebox.showerror("PS4", "Önce Platform = PS4 seçin.", parent=dlg)
                 return
-            try:
-                import uuid
-                root=normalize_path(self.temp_dir_var.get().strip())
-                if not os.path.isdir(root):raise ValueError("Seçilen TEMP klasörü mevcut değil")
-                dst=os.path.join(root,"ps4_merge_"+uuid.uuid4().hex[:10])
-                result=merge_ps4_folders(entries[0].get(),entries[1].get(),dst,entries[2].get().strip())
-                self.source_var.set(result["folder"])
-                self.auto_file_name(silent=True)
-                self._log("PS4 birleşimi hazır: "+result["folder"],"success")
-                dlg.destroy()
-                messagebox.showinfo("PS4","Birleşik klasör hazır. FFPFSC üretmek için Dönüştür'e basın.")
-            except Exception as exc:
-                messagebox.showerror("Birleştirme hatası",str(exc),parent=dlg)
-        tk.Button(dlg,text="Birleştir ve Kaynak Olarak Seç",command=merge,bg="#16a34a",fg="white",font=("Segoe UI",11,"bold")).pack(pady=10)
+            base, patch, title = (v.get().strip() for v in entries)
+            temp = normalize_path(self.temp_dir_var.get().strip())
+            if not base or not patch or not os.path.isdir(temp):
+                messagebox.showerror("PS4", "Ana oyun, update ve mevcut TEMP klasörü gerekli.", parent=dlg)
+                return
+            btn.configure(state="disabled")
+            status.set("Çıkarılıyor / birleştiriliyor... Lütfen bekleyin.")
+            def worker():
+                try:
+                    import uuid
+                    def stage(value):
+                        if os.path.isfile(value) and value.lower().endswith(".pkg"):
+                            return extract_pkg(value, temp, lambda m: self._qlog(m, "info"))
+                        if os.path.isdir(value):
+                            return value
+                        raise ValueError("Kaynak bir PS4 klasörü veya .pkg dosyası olmalı: " + value)
+                    game_dir = stage(base)
+                    update_dir = stage(patch)
+                    dst = os.path.join(temp, "ps4_merge_" + uuid.uuid4().hex[:10])
+                    result = merge_ps4_folders(game_dir, update_dir, dst, title)
+                    def done():
+                        self.source_var.set(result["folder"])
+                        self.auto_file_name(silent=True)
+                        self._log("PS4 birleşimi hazır: " + result["folder"], "success")
+                        dlg.destroy()
+                        messagebox.showinfo("PS4", "Birleşim hazır. FFPFSC için Tek Oyunu Dönüştür'e basın.")
+                    self.after(0, done)
+                except Exception as exc:
+                    error = str(exc)
+                    def failed():
+                        status.set("Hata: " + error)
+                        btn.configure(state="normal")
+                        messagebox.showerror("Birleştirme hatası", error, parent=dlg)
+                    self.after(0, failed)
+            threading.Thread(target=worker, daemon=True).start()
+        btn = tk.Button(dlg, text="Birleştir ve Kaynak Olarak Seç", command=merge,
+                        bg="#16a34a", fg="white", font=("Segoe UI", 11, "bold"))
+        btn.pack(pady=10)
 
     def show_sfo_editor(self):
         source=normalize_path(self.source_var.get().strip())
@@ -6816,6 +6862,20 @@ class App(tk.Tk):
                     self._qlog("Invalid PS4 folder: requires eboot.bin and sce_sys/param.sfo", "error")
                     play_error_once()
                     continue
+                # Edit the extracted/staged copy only; never modify the source game folder.
+                if platform == "PS4" and not batch and self.ps4_title_var.get().strip() and os.path.isdir(target):
+                    try:
+                        import uuid
+                        staged = os.path.join(temp_dir, "ps4_title_" + uuid.uuid4().hex[:10])
+                        shutil.copytree(target, staged)
+                        edit_sfo_title(os.path.join(staged, "sce_sys", "param.sfo"),
+                                       self.ps4_title_var.get().strip())
+                        target = staged
+                        self._qlog("PS4 TITLE updated in TEMP copy; original retained.", "success")
+                    except Exception as exc:
+                        self._qlog("PS4 TITLE update failed: " + str(exc), "error")
+                        play_error_once()
+                        continue
                 is_folder_source = os.path.isdir(target)
                 is_exfat_source = os.path.isfile(target) and target.lower().endswith((".exfat", ".ffpkg"))
 
