@@ -1,6 +1,10 @@
 name: Build and publish Windows package
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/windows-release.yml'
   workflow_dispatch:
 
 concurrency:
@@ -26,6 +30,24 @@ jobs:
         shell: pwsh
         run: python -m unittest discover -s tests -p "test_ps4*.py" -v
 
+      - name: Fetch pinned PS4 PKG extractor (Windows x64)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $url = 'https://github.com/paulomanrique/ps4-pkg-extractor/releases/download/v0.0.1/pkgextract-x86_64-pc-windows-msvc.zip'
+          $checksum = '0c736ee02779fb5cf4403a91da23f94fdaa72debf995be0c400ac9c36acee63a'
+          New-Item -ItemType Directory -Force 'tools' | Out-Null
+          Invoke-WebRequest -Uri $url -OutFile 'pkgextract-download.zip'
+          $actual = (Get-FileHash 'pkgextract-download.zip' -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $checksum) { throw "Unexpected extractor archive SHA256: $actual" }
+          Expand-Archive -Path 'pkgextract-download.zip' -DestinationPath 'tools' -Force
+          $candidate = Get-ChildItem tools -Recurse -Filter 'pkgextract.exe' -File | Select-Object -First 1
+          if (!$candidate) { throw 'pkgextract.exe missing from downloaded archive' }
+          if ($candidate.FullName -ne (Join-Path (Resolve-Path tools).Path 'pkgextract.exe')) {
+            Copy-Item $candidate.FullName 'tools/pkgextract.exe' -Force
+          }
+          if (!(Test-Path 'tools/pkgextract.exe')) { throw 'Extractor verification failed' }
+
       - name: Build executable
         shell: cmd
         run: call scripts\build_windows.bat <nul
@@ -34,12 +56,18 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $version = '2.18.0'
+          $version = '2.19.0'
           $name = "PS5-PFS-Packager-v$version-Windows-x64"
           New-Item -ItemType Directory -Force -Path release, "release/$name" | Out-Null
           Copy-Item "dist/PS5-PFS-Packager.exe" "release/$name/"
           Copy-Item "README.md" "release/$name/"
+          New-Item -ItemType Directory -Force "release/$name/tools" | Out-Null
+          Copy-Item "tools/pkgextract.exe" "release/$name/tools/pkgextract.exe"
           Copy-Item "LICENSE" "release/$name/" -ErrorAction SilentlyContinue
+          foreach ($sound in @("completion.mp3","error.mp3")) {
+            $source = "assets/$sound"
+            if (Test-Path $source) { Copy-Item $source "release/$name/$sound" }
+          }
           Compress-Archive -Path "release/$name/*" -DestinationPath "release/$name.zip" -Force
           $sha = (Get-FileHash "release/$name.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
           "$sha  $name.zip" | Set-Content "release/SHA256SUMS.txt" -Encoding ascii
@@ -47,7 +75,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: PS5-PFS-Packager-v2.18.0-Windows-x64
+          name: PS5-PFS-Packager-v2.19.0-Windows-x64
           path: |
             release/*.zip
             release/SHA256SUMS.txt
@@ -59,11 +87,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference = 'Stop'
-          $tag = 'v2.18.0'
+          $tag = 'v2.19.0'
           gh release view $tag --repo "$env:GITHUB_REPOSITORY" *> $null
           if ($LASTEXITCODE -ne 0) {
             gh release create $tag --repo "$env:GITHUB_REPOSITORY" --target "$env:GITHUB_SHA" --title "PS5 PFS Packager $tag" --notes "Windows x64 package built from the repository with MkPFS 1.1.0. See README for instructions."
             if ($LASTEXITCODE -ne 0) { throw "Release creation failed" }
           }
-          gh release upload $tag "release/PS5-PFS-Packager-v2.18.0-Windows-x64.zip" "release/SHA256SUMS.txt" --clobber --repo "$env:GITHUB_REPOSITORY"
+          gh release upload $tag "release/PS5-PFS-Packager-v2.19.0-Windows-x64.zip" "release/SHA256SUMS.txt" --clobber --repo "$env:GITHUB_REPOSITORY"
           if ($LASTEXITCODE -ne 0) { throw "Release upload failed" }
