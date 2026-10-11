@@ -62,7 +62,7 @@ def detect_logical_cpu_count() -> int:
     except Exception:
         return 1
 
-APP_VERSION = "2.20"
+APP_VERSION = "2.21"
 APP_TITLE = "PS5 PFS Paketleyici"
 
 MKPFS_RELEASES_URL = "https://github.com/PSBrew/MkPFS/releases"
@@ -4640,7 +4640,28 @@ class App(tk.Tk):
         except Exception:
             pass
 
+    def _auto_detect_platform(self, source):
+        """Only choose a platform when metadata is unambiguous."""
+        try:
+            if os.path.isdir(source):
+                if os.path.isfile(os.path.join(source, "sce_sys", "param.sfo")):
+                    return "PS4"
+                if os.path.isfile(os.path.join(source, "sce_sys", "param.json")):
+                    return "PS5"
+            if os.path.isfile(source):
+                base = os.path.basename(source).upper()
+                if re.search(r"CUSA\\d{5}", base) or base.endswith(".PKG"):
+                    return "PS4"
+                if re.search(r"PPSA\\d{5}", base):
+                    return "PS5"
+        except OSError:
+            pass
+        return None
+
     def _on_source_changed(self):
+        platform = self._auto_detect_platform(self.source_var.get().strip())
+        if platform and self.platform_var.get() != platform:
+            self.platform_var.set(platform)
         self._refresh_game_preview()
         if self.batch_var.get():
             self.update_batch_preview()
@@ -6364,6 +6385,7 @@ class App(tk.Tk):
 
     def show_ps4_merge_dialog(self):
         """Merge an extracted game/update pair, optionally extracting selected PS4 PKGs."""
+        self.platform_var.set("PS4")
         dlg = tk.Toplevel(self)
         dlg.title("PS4 Oyun + Update Birleştir")
         dlg.geometry("770x350")
