@@ -62,7 +62,7 @@ def detect_logical_cpu_count() -> int:
     except Exception:
         return 1
 
-APP_VERSION = "2.17"
+APP_VERSION = "2.18"
 APP_TITLE = "PS5 PFS Paketleyici"
 
 MKPFS_RELEASES_URL = "https://github.com/PSBrew/MkPFS/releases"
@@ -3831,6 +3831,7 @@ class App(tk.Tk):
                 pass
 
         apply_widget(self)
+        self._refresh_game_preview()
 
         try:
             self.update_button.configure(
@@ -3971,15 +3972,6 @@ class App(tk.Tk):
         tk.Button(ps4_tools, text="PS4 Oyun + Update Birleştir", command=self.show_ps4_merge_dialog, bg="#0e7490", fg="white", font=("Segoe UI",10,"bold")).pack(side="left", padx=(0,8))
         tk.Button(ps4_tools, text="PARAM.SFO Düzenle", command=self.show_sfo_editor, bg="#334155", fg="white", font=("Segoe UI",10,"bold")).pack(side="left")
 
-        self.ps4_title_var = tk.StringVar(value="")
-        title_row = tk.Frame(self, bg="#151515")
-        title_row.pack(fill="x", padx=34, pady=(0, 5))
-        tk.Label(title_row, text="PS4 oyun adı (TITLE):", fg="white",
-                 bg="#151515").pack(side="left")
-        tk.Entry(title_row, textvariable=self.ps4_title_var,
-                 width=45).pack(side="left", padx=10)
-        tk.Label(title_row, text="İsteğe bağlı; kaynak PKG değiştirilmez.",
-                 fg="#94a3b8", bg="#151515").pack(side="left")
         self.mode_tab_frame = tk.Frame(self, bg="#151515")
         self.mode_tab_frame.pack(fill="x", padx=34, pady=(0, 10))
 
@@ -4613,7 +4605,10 @@ class App(tk.Tk):
                     details += " | Suggested block: " + recommended_block_size(ram_gib, size_gib) + " (auto remains default)"
             except (OSError, AttributeError):
                 pass
-            self.game_preview_label.configure(text="Game: " + details, image="", compound="left")
+            self.game_preview_label.configure(
+                text=(self.tr("game_preview_label") + ": " + details if self.source_var.get().strip()
+                      else self.tr("game_preview_choose")),
+                image="", compound="left")
             self.game_preview_image = None
             if info["icon"]:
                 try:
@@ -6373,6 +6368,13 @@ class App(tk.Tk):
                 tk.Button(frame, text="Klasör", command=lambda v=value:
                           v.set(filedialog.askdirectory(parent=dlg) or v.get())).pack(side="left")
             entries.append(value)
+            if len(entries) == 1:
+                def infer_title(*_):
+                    name = os.path.splitext(os.path.basename(value.get().strip()))[0]
+                    # Keep user-modified titles; only auto-fill if still empty.
+                    if len(entries) >= 3 and not entries[2].get().strip():
+                        entries[2].set(name.replace("_", " ").replace("-", " "))
+                value.trace_add("write", infer_title)
         tk.Label(dlg, text="PKG çıkarımı ve birleşim seçili TEMP klasöründe yapılır. Ana oyun görselleri korunur.",
                  bg="#151515", fg="#cbd5e1", wraplength=710).pack(pady=12)
         status = tk.StringVar(value="Hazır")
@@ -6862,20 +6864,6 @@ class App(tk.Tk):
                     self._qlog("Invalid PS4 folder: requires eboot.bin and sce_sys/param.sfo", "error")
                     play_error_once()
                     continue
-                # Edit the extracted/staged copy only; never modify the source game folder.
-                if platform == "PS4" and not batch and self.ps4_title_var.get().strip() and os.path.isdir(target):
-                    try:
-                        import uuid
-                        staged = os.path.join(temp_dir, "ps4_title_" + uuid.uuid4().hex[:10])
-                        shutil.copytree(target, staged)
-                        edit_sfo_title(os.path.join(staged, "sce_sys", "param.sfo"),
-                                       self.ps4_title_var.get().strip())
-                        target = staged
-                        self._qlog("PS4 TITLE updated in TEMP copy; original retained.", "success")
-                    except Exception as exc:
-                        self._qlog("PS4 TITLE update failed: " + str(exc), "error")
-                        play_error_once()
-                        continue
                 is_folder_source = os.path.isdir(target)
                 is_exfat_source = os.path.isfile(target) and target.lower().endswith((".exfat", ".ffpkg"))
 
