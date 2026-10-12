@@ -3613,6 +3613,7 @@ from ps4_inputs import is_ps4_game_folder, detect_ps4_title_id, inspect_ps4_sour
 from ps4_merge import merge_ps4_folders, edit_sfo_title, sfo_fields
 from ps4_merge_i18n import merge_text
 from ps4_temp_cleanup import cleanup_ps4_merge
+from ps4_shadowmount_metadata import prepare_ps4_shadowmount_metadata
 
 class App(tk.Tk):
     def __init__(self):
@@ -3663,6 +3664,7 @@ class App(tk.Tk):
         self.shutdown_var = tk.BooleanVar(value=False)
         self.fakelib_var = tk.BooleanVar(value=False)
         self.delete_source_var = tk.BooleanVar(value=False)
+        self.ps4_remove_snd0_var = tk.BooleanVar(value=False)
         self.overwrite_output_var = tk.BooleanVar(value=True)
 
         self.progress_var = tk.DoubleVar(value=0)
@@ -3772,6 +3774,7 @@ class App(tk.Tk):
             self.shutdown_var.set(get_bool("shutdown_pc", self.shutdown_var.get()))
             self.fakelib_var.set(get_bool("add_fakelib", self.fakelib_var.get()))
             self.delete_source_var.set(get_bool("delete_source", self.delete_source_var.get()))
+            self.ps4_remove_snd0_var.set(get_bool("ps4_remove_snd0_at9", False))
 
             language = get_text("language", "")
             if language in LANGUAGE_DISPLAY:
@@ -3797,6 +3800,7 @@ class App(tk.Tk):
             "extra_verify": "1" if self.extra_verify_var.get() else "0",
             "add_fakelib": "1" if self.fakelib_var.get() else "0",
             "delete_source": "1" if self.delete_source_var.get() else "0",
+            "ps4_remove_snd0_at9": "1" if self.ps4_remove_snd0_var.get() else "0",
             "shutdown_pc": "1" if self.shutdown_var.get() else "0",
             "language": self.lang_code(),
         }
@@ -3820,6 +3824,7 @@ class App(tk.Tk):
             self.shutdown_var,
             self.fakelib_var,
             self.delete_source_var,
+            self.ps4_remove_snd0_var,
             self.language_display_var,
         ]
         for var in watched_vars:
@@ -6398,12 +6403,12 @@ class App(tk.Tk):
         dlg = tk.Toplevel(self)
         mt = lambda key: merge_text(self.lang_code(), key)
         dlg.title(mt("merge_title"))
-        dlg.geometry("910x475")
-        dlg.minsize(800, 450)
+        dlg.geometry("910x525")
+        dlg.minsize(800, 510)
         dlg.configure(bg="#111827")
         dlg.transient(self)
         dlg.update_idletasks()
-        width, height = 910, 475
+        width, height = 910, 525
         sw, sh = dlg.winfo_screenwidth(), dlg.winfo_screenheight()
         dlg.geometry(f"{width}x{height}+{max(0,(sw-width)//2)}+{max(0,(sh-height)//2)}")
         dlg.after_idle(lambda: dlg.lift())
@@ -6486,6 +6491,11 @@ class App(tk.Tk):
                     setting_filename_internally[0] = False
             suggested_filename[0] = candidate
         entries[0].trace_add("write", update_ps4_suggestions)
+        tk.Checkbutton(dlg, text=mt("remove_snd0"), variable=self.ps4_remove_snd0_var,
+                       command=self.save_config, bg="#111827", fg="#f8fafc",
+                       activebackground="#111827", activeforeground="#f8fafc",
+                       selectcolor="#1e293b", font=("Segoe UI", 10),
+                       anchor="w").pack(fill="x", padx=290, pady=(6,0))
         tk.Label(dlg, text=mt("note"), bg="#111827",
                  fg="#94a3b8", font=("Segoe UI", 10), wraplength=820).pack(pady=(12,3))
         status = tk.StringVar(value=mt("ready"))
@@ -6521,6 +6531,7 @@ class App(tk.Tk):
             output_name = settings["filename"].get().strip()
             auto_filename = not filename_manually_edited[0]
             auto_title = title == suggested_title[0]
+            remove_snd0 = bool(self.ps4_remove_snd0_var.get())
             if not output_name or not output_name.lower().endswith(".ffpfsc"):
                 messagebox.showerror("PS4", mt("filename_error"), parent=dlg)
                 return
@@ -6588,7 +6599,11 @@ class App(tk.Tk):
                             (update_dir, update_is_temporary))
                         if temporary
                     ]
-                    merged_id = result.get("title_id") or detect_ps4_title_id(result["folder"])
+                    shadow_info = prepare_ps4_shadowmount_metadata(result["folder"], remove_snd0=remove_snd0)
+                    self._qlog("ShadowMount+ PS4 metadata: " + shadow_info["param_json"], "success")
+                    if remove_snd0:
+                        self._qlog("snd0.at9 temizliği: " + ("silindi" if shadow_info["snd0_removed"] else "dosya zaten yok"), "info")
+                    merged_id = shadow_info["title_id"]
                     # If the PKG header didn't advertise CUSA, resolve it after extraction.
                     final_output_name = ((merged_id + ".ffpfsc") if auto_filename and merged_id else output_name)
                     def done():
