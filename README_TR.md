@@ -17,6 +17,16 @@ Bu proje MkPFS 1.1.0 tabanlıdır ve PS5/PS4 platform seçimi, sıkıştırma pr
 - Değişiklikleri güvenli şekilde orijinal FFPFSC üzerine yazma
 - 15 dil desteği
 
+## v2.31.0 – Canlı PS4 kuyruğu ve isteğe bağlı update
+
+- **PS4 Oyun + Update Birleştir** penceresinden ana oyunu seçin; update dosyası zorunlu değildir.
+- Dönüştürme devam ederken aynı düğmeyle yeni oyunları ekleyin. İşler sıra ile otomatik çalışır.
+- **İş Kuyruğu** düğmesinden bekleyenleri, tamamlananları ve başarısız olanları görüntüleyin.
+- Bekleyen oyunları kaldırabilir; kuyruğu duraklatabilir veya yeniden başlatabilirsiniz.
+- Her oyunun çıktı adı, çıkış klasörü, TEMP klasörü ve dönüştürme ayarları ayrı saklanır.
+- PKG veya klasör kaynakları, işin sırası geldiğinde TEMP içinde hazırlanır; orijinaller korunur.
+- Aynı hedefe yazan ikinci bir işin kuyruğa eklenmesi engellenir.
+
 ## Gereksinimler
 
 - Windows 10 / Windows 11 64-bit
