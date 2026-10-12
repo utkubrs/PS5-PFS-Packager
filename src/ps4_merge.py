@@ -133,10 +133,23 @@ def merge_ps4_folders(base: str, update: str, destination: str, title: str="", p
                 if rel.parts and rel.parts[0].lower()=="sce_sys":
                     if filename.lower() in ARTWORK or filename.lower()=="param.sfo":
                         continue
-                copy_with_progress(Path(root)/filename,target_dir/filename)
+                source_file = Path(root) / filename
+                target_file = target_dir / filename
+                if move_update:
+                    length = source_file.stat().st_size
+                    os.replace(source_file, target_file)
+                    copied += length
+                    done_files += 1
+                    if progress:
+                        progress(copied, total, done_files, total_files)
+                else:
+                    copy_with_progress(source_file, target_file)
         if title:
             edit_sfo_title(str(destination/"sce_sys"/"param.sfo"),title)
         return {"folder":str(destination),"title_id":base_fields.get("TITLE_ID",""),"title":title or base_fields.get("TITLE","")}
     except BaseException:
-        if destination.exists():shutil.rmtree(destination,ignore_errors=True)
+        # Retain partial TEMP output when staged files have been moved; otherwise
+        # deleting it would also erase the only remaining extracted copy.
+        if destination.exists() and not (move_base or move_update):
+            shutil.rmtree(destination, ignore_errors=True)
         raise
