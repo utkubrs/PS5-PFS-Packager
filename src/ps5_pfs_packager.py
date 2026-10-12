@@ -3612,6 +3612,7 @@ from upgrade_features import inspect_game, validate_preflight, recommended_block
 from ps4_inputs import is_ps4_game_folder, detect_ps4_title_id, inspect_ps4_source, extract_pkg, find_pkg_extractor
 from ps4_merge import merge_ps4_folders, edit_sfo_title, sfo_fields
 from ps4_merge_i18n import merge_text
+from ps4_temp_cleanup import cleanup_ps4_merge
 
 class App(tk.Tk):
     def __init__(self):
@@ -6397,16 +6398,34 @@ class App(tk.Tk):
         dlg = tk.Toplevel(self)
         mt = lambda key: merge_text(self.lang_code(), key)
         dlg.title(mt("merge_title"))
-        dlg.geometry("850x510")
-        dlg.configure(bg="#151515")
+        dlg.geometry("910x475")
+        dlg.minsize(800, 450)
+        dlg.configure(bg="#111827")
+        dlg.transient(self)
+        dlg.update_idletasks()
+        width, height = 910, 475
+        sw, sh = dlg.winfo_screenwidth(), dlg.winfo_screenheight()
+        dlg.geometry(f"{width}x{height}+{max(0,(sw-width)//2)}+{max(0,(sh-height)//2)}")
+        dlg.after_idle(lambda: dlg.lift())
+        header = tk.Frame(dlg, bg="#172338", height=72)
+        header.pack(fill="x")
+        tk.Label(header, text=mt("merge_title"), font=("Segoe UI", 18, "bold"),
+                 fg="#ffffff", bg="#172338", anchor="w").pack(fill="x", padx=24, pady=(12,0))
+        tk.Label(header, text="PS4  •  PKG / Klasör  →  FFPFSC",
+                 font=("Segoe UI", 10), fg="#93c5fd", bg="#172338",
+                 anchor="w").pack(fill="x", padx=24, pady=(0,10))
+        form_area = tk.Frame(dlg, bg="#111827")
+        form_area.pack(fill="x", padx=18, pady=(11,0))
         entries = []
         for caption in (mt("base"), mt("patch"), mt("title")):
-            frame = tk.Frame(dlg, bg="#151515")
-            frame.pack(fill="x", padx=15, pady=6)
-            tk.Label(frame, text=caption, fg="white", bg="#151515",
-                     width=29, anchor="w").pack(side="left")
+            frame = tk.Frame(form_area, bg="#111827")
+            frame.pack(fill="x", pady=5)
+            tk.Label(frame, text=caption, fg="#dbeafe", bg="#111827",
+                     width=28, anchor="w", font=("Segoe UI", 10, "bold")).pack(side="left", padx=(0,5))
             value = tk.StringVar()
-            tk.Entry(frame, textvariable=value, width=52).pack(side="left", fill="x", expand=True)
+            tk.Entry(frame, textvariable=value, width=52, relief="flat",
+                     font=("Segoe UI", 11), highlightthickness=1,
+                     highlightbackground="#475569", highlightcolor="#38bdf8").pack(side="left", fill="x", expand=True, ipady=5)
             if len(entries) < 2:
                 def browse(v=value):
                     selected = filedialog.askopenfilename(
@@ -6425,11 +6444,13 @@ class App(tk.Tk):
             "temp": tk.StringVar(value=self.temp_dir_var.get()),
         }
         for name in ("output", "filename", "temp"):
-            frame = tk.Frame(dlg, bg="#151515")
-            frame.pack(fill="x", padx=15, pady=5)
-            tk.Label(frame, text=mt(name), fg="white", bg="#151515",
-                     width=29, anchor="w").pack(side="left")
-            tk.Entry(frame, textvariable=settings[name], width=52).pack(side="left", fill="x", expand=True)
+            frame = tk.Frame(form_area, bg="#111827")
+            frame.pack(fill="x", pady=5)
+            tk.Label(frame, text=mt(name), fg="#dbeafe", bg="#111827",
+                     width=28, anchor="w", font=("Segoe UI", 10, "bold")).pack(side="left", padx=(0,5))
+            tk.Entry(frame, textvariable=settings[name], width=52,
+                     font=("Segoe UI", 11), relief="flat", highlightthickness=1,
+                     highlightbackground="#475569", highlightcolor="#38bdf8").pack(side="left", fill="x", expand=True, ipady=5)
             if name != "filename":
                 tk.Button(frame, text=mt("browse"),
                           command=lambda key=name: settings[key].set(
@@ -6465,10 +6486,11 @@ class App(tk.Tk):
                     setting_filename_internally[0] = False
             suggested_filename[0] = candidate
         entries[0].trace_add("write", update_ps4_suggestions)
-        tk.Label(dlg, text=mt("note"),
-                 bg="#151515", fg="#cbd5e1", wraplength=710).pack(pady=12)
+        tk.Label(dlg, text=mt("note"), bg="#111827",
+                 fg="#94a3b8", font=("Segoe UI", 10), wraplength=820).pack(pady=(12,3))
         status = tk.StringVar(value=mt("ready"))
-        tk.Label(dlg, textvariable=status, bg="#151515", fg="#a7f3d0").pack(pady=4)
+        tk.Label(dlg, textvariable=status, bg="#111827", fg="#86efac",
+                 font=("Segoe UI", 10, "bold")).pack(pady=4)
         def merge():
             if getattr(self, "_ps4_merge_busy", False):
                 return
@@ -6560,6 +6582,12 @@ class App(tk.Tk):
                         move_base=game_is_temporary,
                         move_update=update_is_temporary,
                     )
+                    cleanup_sources = [
+                        path for path, temporary in (
+                            (game_dir, game_is_temporary),
+                            (update_dir, update_is_temporary))
+                        if temporary
+                    ]
                     merged_id = result.get("title_id") or detect_ps4_title_id(result["folder"])
                     # If the PKG header didn't advertise CUSA, resolve it after extraction.
                     final_output_name = ((merged_id + ".ffpfsc") if auto_filename and merged_id else output_name)
@@ -6572,6 +6600,13 @@ class App(tk.Tk):
                         self.platform_var.set("PS4")
                         self.source_var.set(result["folder"])
                         self.file_name_var.set(final_output_name)
+                        self._ps4_auto_cleanup = {
+                            "temp": temp,
+                            "merged": result["folder"],
+                            "extracted": cleanup_sources,
+                            "filename": final_output_name,
+                            "output_dir": output_dir,
+                        }
                         self._ps4_merge_busy = False
                         self._qprogress(100)
                         self._qstatus(mt("done"))
@@ -6593,7 +6628,7 @@ class App(tk.Tk):
             threading.Thread(target=worker, daemon=True).start()
         btn = tk.Button(dlg, text=mt("submit"), command=merge,
                         bg="#16a34a", fg="white", font=("Segoe UI", 11, "bold"))
-        btn.pack(pady=10)
+        btn.pack(pady=10, ipadx=25, ipady=9)
 
     def show_sfo_editor(self):
         source=normalize_path(self.source_var.get().strip())
@@ -7395,6 +7430,21 @@ class App(tk.Tk):
                 )
 
                 completed_count += 1
+
+                pending_cleanup = getattr(self, "_ps4_auto_cleanup", None)
+                if pending_cleanup and not batch:
+                    expected = normalize_path(os.path.join(
+                        pending_cleanup["output_dir"], pending_cleanup["filename"]))
+                    if (normalize_path(out_path) == expected and normalize_path(target) == normalize_path(pending_cleanup["merged"]):
+                        try:
+                            cleanup_ps4_merge(
+                                pending_cleanup["temp"], pending_cleanup["merged"],
+                                pending_cleanup["extracted"], out_path,
+                                lambda msg: self._qlog(msg, "success"),
+                            )
+                            self._ps4_auto_cleanup = None
+                        except Exception as exc:
+                            self._qlog("TEMP temizlik uyarısı: " + str(exc), "warn")
 
                 if delete_source:
                     self._qphase(self.tr("delete_source_phase"))
