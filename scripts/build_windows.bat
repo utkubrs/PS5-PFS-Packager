@@ -66,6 +66,7 @@ if exist "assets\completion.mp3" if exist "assets\error.mp3" (
   --include-module=ps4_inputs ^
   --include-module=ps4_merge ^
   --include-module=ps4_cleanup ^
+  --include-module=ps4_shadowmount_metadata ^
   --include-module=ps4_merge_i18n ^
   --include-module=upgrade_features ^
   --include-package=psutil ^
@@ -74,8 +75,8 @@ if exist "assets\completion.mp3" if exist "assets\error.mp3" (
   --product-name="PS5 PFS Packager" ^
   --company-name="PS5 PFS Packager Contributors" ^
   --copyright="GPL-3.0-or-later" ^
-  --file-version=2.28.0.0 ^
-  --product-version=2.28.0.0 ^
+  --file-version=2.29.0.0 ^
+  --product-version=2.29.0.0 ^
   src\ps5_pfs_packager.py
 
 if errorlevel 1 goto :error
