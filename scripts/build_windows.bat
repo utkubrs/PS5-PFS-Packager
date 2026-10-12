@@ -65,6 +65,7 @@ if exist "assets\completion.mp3" if exist "assets\error.mp3" (
   --include-module=native_exfat_mount ^
   --include-module=ps4_inputs ^
   --include-module=ps4_merge ^
+  --include-module=ps4_temp_cleanup ^
   --include-module=ps4_merge_i18n ^
   --include-module=upgrade_features ^
   --include-package=psutil ^
