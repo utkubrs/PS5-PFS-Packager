@@ -78,7 +78,7 @@ jobs:
           cp smp-upstream/shadowmountplus.elf dist/ShadowMountPlus-1.7-beta5fix1-PS4Trophy-EXP1.elf
           file dist/*.elf
           readelf -h dist/*.elf
-          sha256sum dist/*.elf | tee dist/SHA256SUMS.txt
+          (cd dist && sha256sum *.elf | tee SHA256SUMS.txt)
           printf '%s\n' \
             'EXPERIMENTAL ONLY: PS4 trophy metadata staging. Not console-tested.' \
             'Does NOT guarantee trophy registration or fix LNC/NPDRM launch.' \
