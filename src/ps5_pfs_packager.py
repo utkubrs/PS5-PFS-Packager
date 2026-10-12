@@ -3646,6 +3646,11 @@ class App(tk.Tk):
         self._last_dat_progress_text = ""
         self._last_multi_preview_key = ""
         self._ps4_cleanup_plan = None  # transient, only for this one-click conversion
+        self._ps4_pending_jobs = []
+        self._ps4_active_job = None
+        self._ps4_history = []
+        self._ps4_queue_paused = False
+        self._ps4_queue_window = None
 
         self.source_var = tk.StringVar()
         self.output_dir_var = tk.StringVar(value=normalize_path(os.path.join(Path.home(), "Downloads")))
@@ -4005,6 +4010,12 @@ class App(tk.Tk):
         self.ps4_tools_frame = ps4_tools
         tk.Button(ps4_tools, text=merge_text(self.lang_code(), "merge_title"), command=self.show_ps4_merge_dialog, bg="#0e7490", fg="white", font=("Segoe UI",10,"bold")).pack(side="left", padx=(0,8))
         tk.Button(ps4_tools, text=merge_text(self.lang_code(), "sfo_button"), command=self.show_sfo_editor, bg="#334155", fg="white", font=("Segoe UI",10,"bold")).pack(side="left")
+        self.ps4_queue_button = tk.Button(
+            ps4_tools, text="İş Kuyruğu (0)" if self.lang_code() == "tr" else "Job Queue (0)",
+            command=self.show_ps4_queue, bg="#334155", fg="white",
+            font=("Segoe UI", 10, "bold"),
+        )
+        self.ps4_queue_button.pack(side="left", padx=(8, 0))
 
         self.mode_tab_frame = tk.Frame(self, bg="#151515")
         self.mode_tab_frame.pack(fill="x", padx=34, pady=(0, 10))
@@ -6400,7 +6411,6 @@ class App(tk.Tk):
 
     def show_ps4_merge_dialog(self):
         """Merge an extracted game/update pair, optionally extracting selected PS4 PKGs."""
-        self.platform_var.set("PS4")
         dlg = tk.Toplevel(self)
         mt = lambda key: merge_text(self.lang_code(), key)
         dlg.title(mt("merge_title"))
@@ -6849,6 +6859,9 @@ class App(tk.Tk):
                 self._handle_mount_close_failure(item[1])
             elif kind == "done":
                 self._set_running(False)
+                if self._ps4_active_job is not None:
+                    self._finish_ps4_job(bool(item[1]) if len(item) > 1 else False)
+                self.after_idle(self._pump_ps4_queue)
         self.after(100, self._process_queue)
 
     def _qsummary(self, text: str):
@@ -6960,6 +6973,9 @@ class App(tk.Tk):
             self._refresh_mount_button()
 
     def cancel(self):
+        if self._ps4_active_job is not None or self._ps4_pending_jobs:
+            self._ps4_queue_paused = True
+            self._refresh_ps4_queue()
         self.cancel_requested = True
         try:
             if self.current_process and self.current_process.poll() is None:
@@ -7010,6 +7026,11 @@ class App(tk.Tk):
         return True
 
     def start(self):
+        if self.is_running or getattr(self, "_ps4_merge_busy", False):
+            return
+        if self._ps4_pending_jobs and self._ps4_active_job is None:
+            self._pump_ps4_queue()
+            return
         if getattr(self, "_retain_ps4_merge_log", False):
             # Mode refresh normally auto-generates the filename. Keep the
             # manually selected name from the preceding PS4 merge dialog.
@@ -7039,6 +7060,7 @@ class App(tk.Tk):
         self.worker_thread.start()
 
     def _worker(self):
+        all_successful = False
         try:
             targets = self.build_targets()
             out_dir = normalize_path(self.output_dir_var.get().strip())
@@ -7563,7 +7585,7 @@ class App(tk.Tk):
                     except Exception as cleanup_exc:
                         self._qlog("TEMP korunuyor; temizleme atlandı: " + str(cleanup_exc), "warn")
                 self.play_completion_sound()
-                if self.shutdown_var.get():
+                if self.shutdown_var.get() and not self._ps4_pending_jobs and not self._ps4_queue_paused:
                     self.schedule_pc_shutdown()
         except Exception as exc:
             self._qlog(self.tr_format("unexpected_error", error=exc), "error")
@@ -7576,7 +7598,7 @@ class App(tk.Tk):
             # run must not inherit ownership of a previous session's folders.
             self._ps4_cleanup_plan = None
             self._stop_operation_timer(clear=False)
-            self.queue.put(("done",))
+            self.queue.put(("done", all_successful))
 
     def _get_mkpfs_prefix(self) -> list[str] | None:
         if is_frozen():
