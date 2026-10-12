@@ -37,7 +37,7 @@ Download the latest Windows package from the repository's **Releases** page.
 The release asset is named:
 
 ```text
-PS5-PFS-Packager-v2.25.0-Windows-x64.zip
+PS5-PFS-Packager-v2.26.0-Windows-x64.zip
 ```
 
 After downloading:
@@ -319,6 +319,12 @@ Fixed a Python `UnboundLocalError` caused by reassigning the merge dialog TITLE 
 - A concurrent conversion cannot be started while merge is running. Existing source folders are untouched.
 - Large directory trees require an initial size inventory before copying starts, which may take time. Windows build success and console game compatibility still require confirmation.
 
+
+## v2.26.0 – Fix MkPFS DLL startup Error 126
+
+- Avoid the Nuitka Windows onefile DLL loader (`--onefile-no-dll`) that can fail on user machines when launching the internal MkPFS subprocess.
+- Keep EXE runtime bootstrap on the Windows local TEMP drive, while extracted PKGs and large MkPFS work files remain on the selected TEMP drive.
+- Windows build verification now runs a real synthetic MkPFS `pack folder` and checks the resulting FFPFSC, not only `--help`.
 
 ## v2.25.0 – PS4 single-click merge and FFPFSC\n\n- Choose a PS4 base game and patch (PKG or extracted folders), adjust the title/output if desired, then use the single green button.\n- Package extraction, merge and FFPFSC packing continue automatically. No second Convert click or confirmation dialog is needed.\n- Detect CUSA from PKG headers or extracted PARAM.SFO; manually edited FFPFSC output names remain unchanged.\n- Move app-created TEMP extractions to avoid a redundant full-sized game copy. Directly selected game/update folders remain untouched.\n- Uses the selected TEMP/output directories and retains the extraction/merge log into the packing phase.\n\n## v2.24.0 – unified PS4 merge settings and localization
 

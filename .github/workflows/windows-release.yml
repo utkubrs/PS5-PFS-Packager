@@ -1,7 +1,12 @@
 name: Build and publish Windows package
-# v2.25.0 release: integrated output/TEMP/filename settings and 15-language test build.
+# v2.26.0 release: integrated output/TEMP/filename settings and 15-language test build.
 
 on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'scripts/build_windows.bat'
+      - '.github/workflows/windows-release.yml'
   push:
     branches: [main]
     paths:
@@ -70,11 +75,44 @@ jobs:
           Write-Host $output
           if ($proc.ExitCode -ne 0 -or $output -match 'Error, load DLL') { throw "MkPFS subprocess smoke test failed with exit $($proc.ExitCode)" }
 
+      - name: Smoke test MkPFS pack folder (same path as GUI)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = (Resolve-Path 'dist/ps5_pfs_packager.dist/PS5-PFS-Packager.exe').Path
+          $work = Join-Path $env:RUNNER_TEMP 'ps4-pack-smoke'
+          $src = Join-Path $work 'game'
+          $output = Join-Path $work 'CUSA12381.ffpfsc'
+          New-Item -ItemType Directory -Force $src | Out-Null
+          [IO.File]::WriteAllBytes((Join-Path $src 'eboot.bin'), [byte[]](0..127))
+          [IO.File]::WriteAllText((Join-Path $src 'readme.txt'), 'Synthetic MkPFS smoke-test payload')
+          $env:TEMP = $work
+          $env:TMP = $work
+          $log = Join-Path $env:RUNNER_TEMP 'mkpfs-real-pack-out.txt'
+          $err = Join-Path $env:RUNNER_TEMP 'mkpfs-real-pack-err.txt'
+          $args = @('--internal-mkpfs', 'pack', 'folder',
+            '--compress', '--threshold-gain', '0', '--max-compressed-ratio', '100',
+            '--no-adjust-output-file-extension', '--version', 'PS4',
+            '--inode-bits', '32', '--temp-folder', $work,
+            '--cpu-count', '2', '--compression-level', '1',
+            '--block-size', 'auto', '--no-verify-structure', $src, $output)
+          $proc = Start-Process -FilePath $exe -ArgumentList $args -RedirectStandardOutput $log -RedirectStandardError $err -Wait -PassThru
+          $stdout = Get-Content $log -Raw -ErrorAction SilentlyContinue
+          $stderr = Get-Content $err -Raw -ErrorAction SilentlyContinue
+          Write-Host $stdout
+          Write-Host $stderr
+          if ($proc.ExitCode -ne 0 -or ($stdout + $stderr) -match 'Error, load DLL') {
+            throw "Actual MkPFS pack folder smoke test failed: $($proc.ExitCode)"
+          }
+          if (!(Test-Path $output) -or (Get-Item $output).Length -lt 1024) {
+            throw 'MkPFS did not create a valid-sized FFPFSC output'
+          }
+
       - name: Package executable and checksums
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $version = '2.25.0'
+          $version = '2.26.0'
           $name = "PS5-PFS-Packager-v$version-Windows-x64"
           New-Item -ItemType Directory -Force -Path release, "release/$name" | Out-Null
           $dist = 'dist/ps5_pfs_packager.dist'
@@ -95,23 +133,24 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: PS5-PFS-Packager-v2.25.0-Windows-x64
+          name: PS5-PFS-Packager-v2.26.0-Windows-x64
           path: |
             release/*.zip
             release/SHA256SUMS.txt
           if-no-files-found: error
 
       - name: Publish GitHub release
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference = 'Stop'
-          $tag = 'v2.25.0'
+          $tag = 'v2.26.0'
           gh release view $tag --repo "$env:GITHUB_REPOSITORY" *> $null
           if ($LASTEXITCODE -ne 0) {
             gh release create $tag --repo "$env:GITHUB_REPOSITORY" --target "$env:GITHUB_SHA" --title "PS5 PFS Packager $tag" --notes "Windows x64 package built from the repository with MkPFS 1.1.0. See README for instructions."
             if ($LASTEXITCODE -ne 0) { throw "Release creation failed" }
           }
-          gh release upload $tag "release/PS5-PFS-Packager-v2.25.0-Windows-x64.zip" "release/SHA256SUMS.txt" --clobber --repo "$env:GITHUB_REPOSITORY"
+          gh release upload $tag "release/PS5-PFS-Packager-v2.26.0-Windows-x64.zip" "release/SHA256SUMS.txt" --clobber --repo "$env:GITHUB_REPOSITORY"
           if ($LASTEXITCODE -ne 0) { throw "Release upload failed" }

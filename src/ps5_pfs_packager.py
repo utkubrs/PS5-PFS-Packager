@@ -62,7 +62,7 @@ def detect_logical_cpu_count() -> int:
     except Exception:
         return 1
 
-APP_VERSION = "2.25"
+APP_VERSION = "2.26"
 APP_TITLE = "PS5 PFS Paketleyici"
 
 MKPFS_RELEASES_URL = "https://github.com/PSBrew/MkPFS/releases"
@@ -7500,12 +7500,27 @@ class App(tk.Tk):
         env = os.environ.copy()
         env["PYTHONIOENCODING"] = "utf-8"
         env["PYTHONUNBUFFERED"] = "1"
-        # Force child Python/system temporary files to the user's selected work drive.
+        # MkPFS receives its large-file work directory via --temp-folder.
+        # Do not redirect the Nuitka onefile bootstrap's native runtime to
+        # arbitrary removable/exFAT drives: Windows LoadLibrary/child startup
+        # can fail with Error 126 before MkPFS code is executed.
         selected_temp = normalize_path(self.temp_dir_var.get().strip())
         if selected_temp and os.path.isdir(selected_temp):
-            env["TEMP"] = selected_temp
-            env["TMP"] = selected_temp
-            env["TMPDIR"] = selected_temp
+            if is_frozen() and os.name == "nt":
+                runtime_temp = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Temp")
+                if not os.path.isdir(runtime_temp):
+                    runtime_temp = os.environ.get("TEMP") or os.environ.get("TMP") or tempfile.gettempdir()
+                env["TEMP"] = runtime_temp
+                env["TMP"] = runtime_temp
+                env["TMPDIR"] = runtime_temp
+                self._qlog(
+                    "MkPFS çalışma TEMP'i: " + selected_temp
+                    + " | Windows EXE çalışma zamanı: " + runtime_temp, "muted"
+                )
+            else:
+                env["TEMP"] = selected_temp
+                env["TMP"] = selected_temp
+                env["TMPDIR"] = selected_temp
 
         last_seen: dict[str, int] = {}
         last_mapped_progress = progress_offset
