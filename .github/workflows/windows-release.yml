@@ -118,7 +118,7 @@ jobs:
           $err = Join-Path $env:RUNNER_TEMP 'mkpfs-real-pack-err.txt'
           $args = @('--internal-mkpfs', 'pack', 'folder',
             '--compress', '--threshold-gain', '0', '--max-compressed-ratio', '100',
-            '--no-adjust-output-file-extension', '--version', 'PS4',
+            '--no-adjust-output-file-extension', '--version', 'PS5',
             '--inode-bits', '32', '--temp-folder', $work,
             '--cpu-count', '2', '--compression-level', '1',
             '--block-size', 'auto', '--no-verify-structure', $src, $output)
@@ -133,6 +133,20 @@ jobs:
           if (!(Test-Path $output) -or (Get-Item $output).Length -lt 1024) {
             throw 'MkPFS did not create a valid-sized FFPFSC output'
           }
+          # Compare with the known-working PS4 PKG Tool: PS4 game content must
+          # reside in an OUTER PS5-profile PFS (version 2, not PS4 version 1).
+          $stream = [IO.File]::OpenRead($output)
+          try {
+            $hdr = New-Object byte[] 80
+            if ($stream.Read($hdr, 0, 80) -ne 80) { throw 'Truncated outer PFS header' }
+            $pfsVersion = [BitConverter]::ToInt64($hdr, 0)
+            $pfsMagic = [BitConverter]::ToInt64($hdr, 8)
+            $pfsBlock = [BitConverter]::ToUInt32($hdr, 0x20)
+          } finally { $stream.Dispose() }
+          if ($pfsVersion -ne 2 -or $pfsMagic -ne 20130315 -or $pfsBlock -ne 65536) {
+            throw "Incorrect outer PFS header: version=$pfsVersion magic=$pfsMagic block=$pfsBlock (expected PS5 v2, 64 KiB)"
+          }
+          Write-Host 'OUTER PS5 PFS v2 verified; PS4 game content preserved.'
           # Inspect the real outer PFSC image to prevent the previous bug:
           # ps4_merge_<random>.exfat instead of CUSA12381.exfat.
           $outer = Join-Path $work 'inspect_outer'
