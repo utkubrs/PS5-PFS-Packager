@@ -6435,6 +6435,27 @@ class App(tk.Tk):
                           command=lambda key=name: settings[key].set(
                               filedialog.askdirectory(parent=dlg) or settings[key].get()
                           )).pack(side="left", padx=3)
+        # Keep suggestions editable. Later edits to TITLE or output filename win
+        # over subsequent input changes and over internal PKG metadata.
+        suggested_title = [""]
+        suggested_filename = [settings["filename"].get().strip()]
+        def update_ps4_suggestions(*_):
+            source = entries[0].get().strip()
+            if not source:
+                return
+            metadata = inspect_ps4_source(source)
+            title_name = metadata.get("title", "")
+            title_id = metadata.get("title_id", "")
+            old_title = suggested_title[0]
+            if not entries[2].get().strip() or entries[2].get().strip() == old_title:
+                entries[2].set(title_name)
+            suggested_title[0] = title_name
+            candidate = ((title_id or safe_filename(title_name)) + ".ffpfsc")
+            current_name = settings["filename"].get().strip()
+            if current_name in ("", "PPSA00000.ffpfsc", "CUSA00000.ffpfsc", suggested_filename[0]):
+                settings["filename"].set(candidate)
+            suggested_filename[0] = candidate
+        entries[0].trace_add("write", update_ps4_suggestions)
         tk.Label(dlg, text=mt("note"),
                  bg="#151515", fg="#cbd5e1", wraplength=710).pack(pady=12)
         status = tk.StringVar(value=mt("ready"))
