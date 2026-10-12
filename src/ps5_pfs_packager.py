@@ -6508,15 +6508,9 @@ class App(tk.Tk):
                     game_dir, game_is_temporary = stage(base)
                     update_dir, update_is_temporary = stage(patch)
                     dst = os.path.join(temp, "ps4_merge_" + uuid.uuid4().hex[:10])
-                    # Use actual PARAM.SFO title when the dialog still shows the
-                    # automatic filename suggestion; explicit user edits take precedence.
-                    original_name = os.path.splitext(os.path.basename(base))[0].replace("_", " ").replace("-", " ")
-                    effective_title = title
-                    if effective_title == original_name:
-                        try:
-                            effective_title = (sfo_fields(os.path.join(game_dir, "sce_sys", "param.sfo")).get("TITLE", "") or effective_title)
-                        except (OSError, ValueError):
-                            pass
+                    # The automatic preview must not overwrite the actual SFO TITLE.
+                    # Only an explicitly edited title is patched into PARAM.SFO.
+                    effective_title = "" if auto_title else title
                     import time
                     last_report = [0.0]
                     def progress(copied, total, files, count):
@@ -6534,7 +6528,15 @@ class App(tk.Tk):
                             self._merge_last_log = now
                             self._qlog(msg, "info")
                     self._qphase(mt("copying"))
-                    result = merge_ps4_folders(game_dir, update_dir, dst, effective_title, progress=progress)
+                    result = merge_ps4_folders(
+                        game_dir, update_dir, dst, effective_title,
+                        progress=progress,
+                        move_base=game_is_temporary,
+                        move_update=update_is_temporary,
+                    )
+                    merged_id = result.get("title_id") or detect_ps4_title_id(result["folder"])
+                    # If the PKG header didn't advertise CUSA, resolve it after extraction.
+                    final_output_name = ((merged_id + ".ffpfsc") if auto_filename and merged_id else output_name)
                     def done():
                         self.source_var.set(result["folder"])
                         # Source change performs auto-naming; restore the explicitly
