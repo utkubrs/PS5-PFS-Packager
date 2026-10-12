@@ -16,9 +16,9 @@ from ps4_merge import _parse_sfo
 # PS4-to-FFPFSC converter. Fall back to en-US for missing fields.
 TITLE_LOCALES = (
     "ja-JP", "en-US", "fr-FR", "es-ES", "de-DE", "it-IT",
-    "nl-NL", "pt-PT", "ru-RU", "ko-KR", "zh-TW", "zh-CN",
+    "nl-NL", "pt-PT", "ru-RU", "ko-KR", "zh-Hant", "zh-Hans",
     "fi-FI", "sv-SE", "da-DK", "no-NO", "pl-PL", "pt-BR",
-    "en-GB", "tr-TR", "es-MX", "fr-CA", "ar-AE", "cs-CZ",
+    "en-GB", "tr-TR", "es-419", "ar-AE", "fr-CA", "cs-CZ",
     "hu-HU", "el-GR", "ro-RO", "th-TH", "vi-VN", "id-ID",
 )
 
@@ -81,7 +81,7 @@ def prepare_ps4_shadowmount_metadata(merged_folder: str, remove_snd0: bool = Fal
         localized["defaultLanguage"] = "en-US"
     payload["titleId"] = title_id
     payload["titleName"] = title
-    localized_params = payload["localizedParameters"] = localized
+    payload["localizedParameters"] = localized
     cid = str(fields.get("CONTENT_ID") or "").strip()
     if cid:
         payload["contentId"] = cid
