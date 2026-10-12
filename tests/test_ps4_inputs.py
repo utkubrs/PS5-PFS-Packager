@@ -1,9 +1,11 @@
 import tempfile
 import unittest
+import os
+from unittest import mock
 from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from ps4_inputs import is_ps4_game_folder, detect_ps4_title_id, inspect_ps4_source, extract_pkg
+from ps4_inputs import is_ps4_game_folder, detect_ps4_title_id, inspect_ps4_source, extract_pkg, find_pkg_extractor
 
 class PS4InputsTests(unittest.TestCase):
     def test_ps4_folder_requires_param_sfo(self):
@@ -36,6 +38,49 @@ class PS4InputsTests(unittest.TestCase):
             data=inspect_ps4_source(str(pkg))
             self.assertEqual(data["title"], "Batman Arkham Knight")
             self.assertEqual(data["title_id"], "")
+
+    def test_sidecar_tools_from_real_exe_dir_even_if_runtime_is_temp(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            app=root/"Installed Program"
+            run=root/"onefile_runtime"
+            (app/"tools").mkdir(parents=True)
+            run.mkdir()
+            extractor=app/"tools"/"pkgextract.exe"
+            extractor.write_bytes(b"placeholder")
+            with mock.patch.object(sys, "executable", str(run/"PS5-PFS-Packager.exe")):
+                with mock.patch.object(sys, "argv", [str(app/"PS5-PFS-Packager.exe")]):
+                    with mock.patch.dict(os.environ, {"PS4_PKG_EXTRACTOR": ""}):
+                        self.assertEqual(find_pkg_extractor(app_dir=str(app)), str(extractor.resolve()))
+
+    def test_extractor_can_be_found_inside_onefile_payload_without_sidecar(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            included=root/"unpacked"/"tools"/"pkgextract.exe"
+            included.parent.mkdir(parents=True)
+            included.touch()
+            with mock.patch.dict(os.environ, {"PS4_PKG_EXTRACTOR": ""}):
+                self.assertEqual(
+                    find_pkg_extractor(app_dir=str(root/"desktop"),
+                                       bundled_path=str(included)),
+                    str(included.resolve()))
+
+    def test_explicit_extractor_override_is_supported(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            extractor=Path(tmp)/"custom_pkgextract.exe"
+            extractor.touch()
+            with mock.patch.dict(os.environ, {"PS4_PKG_EXTRACTOR": str(extractor)}):
+                self.assertEqual(find_pkg_extractor(), str(extractor.resolve()))
+
+    def test_missing_extractor_never_silently_succeeds(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base=Path(tmp)
+            pkg=base/"Sample.pkg"
+            pkg.touch()
+            with mock.patch.dict(os.environ, {"PS4_PKG_EXTRACTOR": ""}):
+                with mock.patch("ps4_inputs.find_pkg_extractor", return_value=None):
+                    with self.assertRaisesRegex(RuntimeError, "PKG extractor missing"):
+                        extract_pkg(str(pkg), str(base), app_dir=str(base/"nonexistent"))
 
 if __name__=="__main__":
     unittest.main()
