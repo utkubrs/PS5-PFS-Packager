@@ -6409,6 +6409,271 @@ class App(tk.Tk):
         modal.focus_force()
         modal.grab_set()
 
+    def _ps4_job_output_key(self, job):
+        return os.path.normcase(os.path.abspath(os.path.join(job["output"], job["filename"])))
+
+    def _enqueue_ps4_job(self, job):
+        """Called on the Tk thread: enqueue without disturbing an active packer."""
+        requested = self._ps4_job_output_key(job)
+        outstanding = list(self._ps4_pending_jobs)
+        if self._ps4_active_job is not None:
+            outstanding.append(self._ps4_active_job)
+        if any(self._ps4_job_output_key(other) == requested for other in outstanding):
+            return False
+        # Do not enqueue the same output twice after its first successful build.
+        if any(self._ps4_job_output_key(old) == requested and old.get("result") == "ok"
+               for old in self._ps4_history):
+            return False
+        self._ps4_pending_jobs.append(dict(job))
+        self._ps4_queue_paused = False
+        self._log("PS4 kuyruğuna eklendi: " + job["filename"]
+                  + (" | update yok" if not job["patch"] else " | update var"), "success")
+        self._refresh_ps4_queue()
+        self.after_idle(self._pump_ps4_queue)
+        return True
+
+    def _refresh_ps4_queue(self):
+        count = len(self._ps4_pending_jobs) + int(self._ps4_active_job is not None)
+        try:
+            self.ps4_queue_button.configure(
+                text=("İş Kuyruğu" if self.lang_code() == "tr" else "Job Queue")
+                + f" ({count})",
+            )
+        except Exception:
+            pass
+        view = getattr(self, "_ps4_queue_list", None)
+        if view is None or not view.winfo_exists():
+            return
+        view.delete(0, "end")
+        if self._ps4_active_job is not None:
+            view.insert("end", "▶ " + self._ps4_active_job["filename"] + " — Çalışıyor")
+        for i, job in enumerate(self._ps4_pending_jobs, 1):
+            view.insert("end", f"{i}. {job['filename']} — Bekliyor"
+                        + (" (update yok)" if not job["patch"] else ""))
+        for job in self._ps4_history[-40:]:
+            view.insert("end", ("✓ " if job.get("result") == "ok" else "✗ ")
+                        + job["filename"] + (" — Bitti" if job.get("result") == "ok" else " — Hata"))
+        try:
+            self._ps4_queue_state.configure(
+                text=f"Aktif: {int(self._ps4_active_job is not None)} | "
+                     f"Bekleyen: {len(self._ps4_pending_jobs)}"
+                     + (" | DURAKLATILDI" if self._ps4_queue_paused else "")
+            )
+        except Exception:
+            pass
+
+    def show_ps4_queue(self):
+        existing = self._ps4_queue_window
+        if existing is not None and existing.winfo_exists():
+            existing.lift()
+            existing.focus_force()
+            return
+        dialog = tk.Toplevel(self)
+        self._ps4_queue_window = dialog
+        dialog.title("PS4 İş Kuyruğu" if self.lang_code() == "tr" else "PS4 Job Queue")
+        dialog.geometry("800x460")
+        dialog.minsize(650, 350)
+        dialog.configure(bg="#151515")
+        tk.Label(dialog, text="PS4 Oyun Dönüştürme Kuyruğu",
+                 bg="#151515", fg="white", font=("Segoe UI", 17, "bold")).pack(pady=(18, 8))
+        self._ps4_queue_state = tk.Label(dialog, bg="#151515", fg="#86efac",
+                                         font=("Segoe UI", 10))
+        self._ps4_queue_state.pack()
+        self._ps4_queue_list = tk.Listbox(
+            dialog, bg="#202020", fg="white", selectbackground="#2563eb",
+            font=("Consolas", 11), activestyle="none",
+        )
+        self._ps4_queue_list.pack(fill="both", expand=True, padx=20, pady=12)
+        controls = tk.Frame(dialog, bg="#151515")
+        controls.pack(fill="x", padx=20, pady=(0, 16))
+
+        def remove_waiting():
+            selection = self._ps4_queue_list.curselection()
+            if not selection:
+                return
+            index = selection[0] - int(self._ps4_active_job is not None)
+            if 0 <= index < len(self._ps4_pending_jobs):
+                removed = self._ps4_pending_jobs.pop(index)
+                self._log("Bekleyen görev kuyruktan çıkarıldı: " + removed["filename"], "warn")
+                self._refresh_ps4_queue()
+
+        def pause_queue():
+            self._ps4_queue_paused = True
+            self._refresh_ps4_queue()
+
+        def resume_queue():
+            self._ps4_queue_paused = False
+            self.cancel_requested = False
+            self._refresh_ps4_queue()
+            self.after_idle(self._pump_ps4_queue)
+
+        tk.Button(controls, text="Seçili Bekleyeni Kaldır", command=remove_waiting,
+                  bg="#991b1b", fg="white", font=("Segoe UI", 10, "bold")).pack(side="left")
+        tk.Button(controls, text="Kuyruğu Duraklat", command=pause_queue,
+                  bg="#334155", fg="white", font=("Segoe UI", 10, "bold")).pack(side="left", padx=8)
+        tk.Button(controls, text="Kuyruğu Sürdür", command=resume_queue,
+                  bg="#15803d", fg="white", font=("Segoe UI", 10, "bold")).pack(side="left")
+        tk.Label(controls, text="Duraklat: çalışan oyun bitince durur.",
+                 bg="#151515", fg="#94a3b8").pack(side="right")
+        self._refresh_ps4_queue()
+
+    def _finish_ps4_job(self, successful: bool):
+        job = self._ps4_active_job
+        if job is None:
+            return
+        job["result"] = "ok" if successful else "failed"
+        self._ps4_history.append(job)
+        self._ps4_active_job = None
+        self._ps4_merge_busy = False
+        self._log(("PS4 kuyruk görevi tamamlandı: " if successful
+                   else "PS4 kuyruk görevi başarısız: ") + job["filename"],
+                  "success" if successful else "error")
+        self._refresh_ps4_queue()
+        self._update_start_button_state()
+        if not self._ps4_queue_paused:
+            self.after_idle(self._pump_ps4_queue)
+
+    def _pump_ps4_queue(self):
+        if (self._ps4_queue_paused or not self._ps4_pending_jobs
+                or self._ps4_active_job is not None
+                or self.is_running or getattr(self, "_ps4_merge_busy", False)
+                or self.mount_busy or self.mount_session is not None):
+            return
+        job = self._ps4_pending_jobs.pop(0)
+        self._ps4_active_job = job
+        self._ps4_merge_busy = True
+        self.cancel_requested = False
+        self._refresh_ps4_queue()
+        self._qphase("PS4 oyunu hazırlanıyor")
+        self._qstatus("Kuyruktan iş başlatıldı: " + job["filename"])
+        self._qprogress(0)
+        self._qlog("PS4 kuyruktan başlatıldı: " + job["filename"], "title")
+        self._update_start_button_state()
+        threading.Thread(target=self._ps4_queue_merge_worker, args=(job,), daemon=True).start()
+
+    def _ps4_queue_merge_worker(self, job):
+        """Prepare one TEMP-owned PS4 tree, then reuse the existing MkPFS worker."""
+        try:
+            import uuid
+            temp = job["temp"]
+            if not os.path.isdir(temp):
+                raise ValueError("TEMP klasörü artık bulunamıyor: " + temp)
+
+            def stage(value):
+                if os.path.isfile(value) and value.lower().endswith((".pkg", ".fpkg")):
+                    extracted = extract_pkg(
+                        value, temp, lambda msg: self._qlog(msg, "info"),
+                        app_dir=app_base_dir(),
+                        bundled_path=resource_path("tools/pkgextract.exe"),
+                    )
+                    return extracted, True
+                if os.path.isdir(value):
+                    return value, False
+                raise ValueError("Geçersiz PS4 kaynağı: " + value)
+
+            game_dir, game_is_temporary = stage(job["base"])
+            if self.cancel_requested:
+                raise RuntimeError("İşlem iptal edildi.")
+            if job["patch"]:
+                update_dir, update_is_temporary = stage(job["patch"])
+            else:
+                update_dir, update_is_temporary = None, False
+            if self.cancel_requested:
+                raise RuntimeError("İşlem iptal edildi.")
+            dst = os.path.join(temp, "ps4_merge_" + uuid.uuid4().hex[:10])
+            last_report = [0.0]
+
+            def progress(copied, total, files, count):
+                if self.cancel_requested:
+                    raise RuntimeError("İşlem iptal edildi.")
+                now = time.monotonic()
+                if now - last_report[0] < 0.35 and copied < total:
+                    return
+                last_report[0] = now
+                percent = min(100.0, 100.0 * copied / max(1, total))
+                msg = (f"PS4 hazırlık %{percent:.1f} | "
+                       f"{copied / 1024**3:.2f}/{total / 1024**3:.2f} GB | "
+                       f"{files}/{count} dosya")
+                self._qprogress(percent)
+                self._qstatus(msg)
+                if now - getattr(self, "_merge_last_log", 0) >= 5:
+                    self._merge_last_log = now
+                    self._qlog(msg, "info")
+
+            self._qphase("PS4 oyun hazırlanıyor" if not update_dir else "PS4 oyun + update birleştiriliyor")
+            result = merge_ps4_folders(
+                game_dir, update_dir, dst,
+                "" if job["auto_title"] else job["title"],
+                progress=progress,
+                move_base=game_is_temporary,
+                move_update=update_is_temporary,
+            )
+            metadata = prepare_ps4_shadowmount_metadata(
+                result["folder"], remove_snd0=job["remove_snd0"],
+            )
+            self._qlog("PS4 ShadowMount+ param.json: " + metadata["param_json"], "success")
+            if job["remove_snd0"]:
+                self._qlog("snd0.at9: " + (
+                    "silindi" if metadata["snd0_removed"] else "dosya zaten yok"), "info")
+            merged_id = metadata["title_id"]
+            final_name = ((merged_id + ".ffpfsc")
+                          if job["auto_filename"] and merged_id else job["filename"])
+            job["filename"] = final_name
+            # Detect output collisions even when CUSA became known only after PKG extraction.
+            final_key = self._ps4_job_output_key(job)
+            if any(self._ps4_job_output_key(other) == final_key
+                   for other in self._ps4_pending_jobs + self._ps4_history
+                   if other.get("result") in (None, "ok")):
+                raise ValueError("Bir başka kuyruk oyununun FFPFSC çıkışı aynı: " + final_name)
+            if self.cancel_requested:
+                raise RuntimeError("İşlem iptal edildi.")
+
+            def ready_to_pack():
+                if self.cancel_requested:
+                    self._ps4_merge_busy = False
+                    self._ps4_queue_paused = True
+                    self._finish_ps4_job(False)
+                    return
+                self.batch_var.set(False)
+                self.on_mode_changed()
+                self.platform_var.set("PS4")
+                self.source_var.set(result["folder"])
+                self.output_dir_var.set(job["output"])
+                self.temp_dir_var.set(temp)
+                self.file_name_var.set(final_name)
+                self.cpu_var.set(job["cpu"])
+                self.compression_level_var.set(job["compression"])
+                self.block_size_var.set(job["block"])
+                self.preset_var.set(job["preset"])
+                self.extra_verify_var.set(job["extra_verify"])
+                self.fakelib_var.set(job["fakelib"])
+                self.shutdown_var.set(job["shutdown"])
+                self.ps4_remove_snd0_var.set(job["remove_snd0"])
+                self._ps4_cleanup_plan = {
+                    "merge": result["folder"],
+                    "staged": ([game_dir] if game_is_temporary else [])
+                              + ([update_dir] if update_is_temporary else []),
+                    "temp": temp,
+                }
+                self._ps4_merge_busy = False
+                self._retain_ps4_merge_log = True
+                self._log("PS4 hazırlık tamamlandı, FFPFSC başlatılıyor: " + final_name, "info")
+                self._update_start_button_state()
+                self.after_idle(self.start)
+
+            self.after(0, ready_to_pack)
+        except Exception as exc:
+            error = str(exc)
+
+            def failed():
+                self._qstatus("PS4 hazırlık başarısız")
+                self._log("PS4 kuyruk hazırlık hatası: " + error, "error")
+                if self.cancel_requested:
+                    self._ps4_queue_paused = True
+                self._finish_ps4_job(False)
+
+            self.after(0, failed)
+
     def show_ps4_merge_dialog(self):
         """Merge an extracted game/update pair, optionally extracting selected PS4 PKGs."""
         dlg = tk.Toplevel(self)
