@@ -56,6 +56,7 @@ if exist "assets\completion.mp3" if exist "assets\error.mp3" (
   --windows-uac-admin ^
   --windows-icon-from-ico=assets\appicon.ico ^
   --include-data-files=assets\appicon.ico=appicon.ico ^
+  --include-data-files=tools\pkgextract.exe=tools/pkgextract.exe ^
   --output-dir=dist ^
   --output-filename=PS5-PFS-Packager.exe ^
   --include-package=mkpfs ^
@@ -72,8 +73,8 @@ if exist "assets\completion.mp3" if exist "assets\error.mp3" (
   --product-name="PS5 PFS Packager" ^
   --company-name="PS5 PFS Packager Contributors" ^
   --copyright="GPL-3.0-or-later" ^
-  --file-version=2.26.0.0 ^
-  --product-version=2.26.0.0 ^
+  --file-version=2.27.0.0 ^
+  --product-version=2.27.0.0 ^
   src\ps5_pfs_packager.py
 
 if errorlevel 1 goto :error

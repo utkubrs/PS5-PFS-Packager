@@ -67,31 +67,93 @@ def inspect_ps4_source(path: str) -> dict:
         title = re.sub(r"[_]+", " ", stem).strip(" -_.")
     return {"title": title, "title_id": title_id}
 
-def extract_pkg(source: str, temp_dir: str, log=None) -> str:
-    """Extract using pkgextract -o; caller validates extracted game and converts it."""
+def pkg_extractor_candidates(app_dir: str | None = None, bundled_path: str | None = None) -> list[Path]:
+    """Search beside the REAL EXE and within a Nuitka onefile payload.
+
+    sys.executable in onefile mode can point at the extracted child in TEMP,
+    not the program installed on the user's desktop.
+    """
+    import sys
+
+    roots: list[Path] = []
+    if app_dir:
+        roots.append(Path(app_dir).resolve())
+    main = sys.modules.get("__main__")
+    compiled = getattr(main, "__compiled__", None)
+    if compiled is not None:
+        containing_dir = getattr(compiled, "containing_dir", None)
+        if containing_dir:
+            roots.append(Path(containing_dir).resolve())
+    # Nuitka documents argv[0] as the real onefile executable location.
+    if sys.argv and sys.argv[0] and (compiled is not None or getattr(sys, "frozen", False)):
+        roots.append(Path(sys.argv[0]).resolve().parent)
+    if getattr(sys, "frozen", False) or compiled is not None:
+        roots.append(Path(sys.executable).resolve().parent)
+    roots.append(Path(__file__).resolve().parents[1])
+
+    candidates: list[Path] = []
+    configured = os.environ.get("PS4_PKG_EXTRACTOR")
+    if configured:
+        candidates.append(Path(configured).expanduser())
+    if bundled_path:
+        candidates.append(Path(bundled_path))
+    for root in roots:
+        candidates.extend((
+            root / "tools" / "pkgextract.exe",
+            root / "pkgextract.exe",
+            root / "pkgextract" / "pkgextract.exe",
+        ))
+    # PATH is the final fallback, not the primary source in a portable build.
+    for name in ("pkgextract.exe", "pkgextract"):
+        located = shutil.which(name)
+        if located:
+            candidates.append(Path(located))
+
+    unique: list[Path] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        normalized = candidate.resolve()
+        key = os.path.normcase(str(normalized)).casefold()
+        if key not in seen:
+            seen.add(key)
+            unique.append(normalized)
+    return unique
+
+
+def find_pkg_extractor(app_dir: str | None = None, bundled_path: str | None = None) -> str | None:
+    return next((str(candidate) for candidate in pkg_extractor_candidates(app_dir, bundled_path)
+                 if candidate.is_file()), None)
+
+
+def extract_pkg(source: str, temp_dir: str, log=None,
+                app_dir: str | None = None, bundled_path: str | None = None) -> str:
+    """Extract PKG without guessing Nuitka's temporary runtime directory."""
     source=Path(source).resolve()
     if source.suffix.lower() not in (".pkg",".fpkg") or not source.is_file():
         raise ValueError("Select an existing .pkg or .fpkg file")
-    # Support portable placement beside the EXE or in a tools directory.
-    import sys
-    app_dir=Path(sys.executable).resolve().parent if getattr(sys,"frozen",False) or "__compiled__" in globals() else Path(__file__).resolve().parents[1]
-    candidates=[
-        os.environ.get("PS4_PKG_EXTRACTOR"),
-        str(app_dir/"pkgextract.exe"),
-        str(app_dir/"tools"/"pkgextract.exe"),
-        str(app_dir/"pkgextract"/"pkgextract.exe"),
-        str(app_dir/"PS5-PFS-Packager"/"pkgextract.exe"),
-        shutil.which("pkgextract.exe"),
-        shutil.which("pkgextract"),
-    ]
-    tool=next((x for x in candidates if x and Path(x).is_file()),None)
-    if not tool or not Path(tool).is_file():
-        raise RuntimeError("PKG extractor missing. Place pkgextract.exe beside PS5-PFS-Packager.exe, in its tools folder, or set PS4_PKG_EXTRACTOR.")
+    tool=find_pkg_extractor(app_dir, bundled_path)
+    if tool is None:
+        searched=pkg_extractor_candidates(app_dir,bundled_path)
+        places="; ".join(str(p) for p in searched[:8])
+        raise RuntimeError(
+            "PKG extractor missing. Install the full Windows ZIP (including tools/), "
+            "or place pkgextract.exe beside PS5-PFS-Packager.exe. "
+            "Checked: " + places
+        )
+    if log:
+        log("PKG extractor: " + tool)
     base=Path(temp_dir).resolve()/"ps4_pkg_extract"
     base.mkdir(parents=True,exist_ok=True)
     folder=base/(re.sub(r"[^A-Za-z0-9_.-]","_",source.stem)[:80])
     if folder.exists():
-        raise FileExistsError(f"Extraction target exists: {folder}. Remove it or choose a different TEMP directory.")
+        # A previous failed run can leave this directory behind. Never
+        # overwrite, delete, or treat an incomplete extraction as successful.
+        import uuid
+        stem=folder.name[:65]
+        while folder.exists():
+            folder=base/(stem+"_"+uuid.uuid4().hex[:10])
+        if log:
+            log("Existing extraction preserved; using new TEMP folder: "+str(folder))
     if log:log(f"Extracting {source.name} to {folder}")
     flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
     startup = None
