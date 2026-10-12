@@ -50,4 +50,45 @@ class PS4MergeTest(unittest.TestCase):
             self.assertEqual((merged/"sce_sys"/"icon0.png").read_text(),"ORIGINAL")
             self.assertEqual((merged/"new_data.bin").read_text(),"PATCH")
             self.assertEqual(sfo_fields(str(merged/"sce_sys"/"param.sfo"))["TITLE"],"Merged TR")
+    def test_fast_merge_moves_only_extracted_inputs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            temp=Path(tmp); base=temp/"extracted_game"; update=temp/"extracted_patch"; dst=temp/"merged"
+            for path in (base,update):
+                (path/"sce_sys").mkdir(parents=True)
+                make_sfo(path/"sce_sys"/"param.sfo",category="gp" if path==update else "gd")
+            (base/"eboot.bin").write_bytes(b"GAME")
+            (base/"sce_sys"/"icon0.png").write_bytes(b"BASE ICON")
+            (base/"data.bin").write_bytes(b"ORIGINAL")
+            (update/"data.bin").write_bytes(b"PATCHED")
+            (update/"new.bin").write_bytes(b"NEW")
+            (update/"sce_sys"/"icon0.png").write_bytes(b"PATCH ICON")
+            values=[]
+            result=merge_ps4_folders(str(base),str(update),str(dst),
+                                     move_base=True,move_update=True,
+                                     progress=lambda *v: values.append(v))
+            self.assertEqual(result["title_id"],"CUSA12345")
+            self.assertFalse(base.exists())
+            self.assertEqual((dst/"data.bin").read_bytes(),b"PATCHED")
+            self.assertEqual((dst/"new.bin").read_bytes(),b"NEW")
+            self.assertEqual((dst/"sce_sys"/"icon0.png").read_bytes(),b"BASE ICON")
+            self.assertEqual(sfo_fields(str(dst/"sce_sys"/"param.sfo"))["CATEGORY"],"gd")
+            self.assertTrue(values)
+            self.assertEqual(values[-1][0:2],(values[-1][1],values[-1][1]))
+            self.assertEqual(values[-1][2:4],(values[-1][3],values[-1][3]))
+
+    def test_mismatched_patch_does_not_move_inputs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            temp=Path(tmp); base=temp/"base"; update=temp/"patch"; dst=temp/"merged"
+            for path in (base,update):
+                (path/"sce_sys").mkdir(parents=True)
+            (base/"eboot.bin").touch()
+            make_sfo(base/"sce_sys"/"param.sfo",title_id="CUSA12345")
+            make_sfo(update/"sce_sys"/"param.sfo",title_id="CUSA99999",category="gp")
+            with self.assertRaises(ValueError):
+                merge_ps4_folders(str(base),str(update),str(dst),
+                                  move_base=True,move_update=True)
+            self.assertTrue(base.exists())
+            self.assertTrue(update.exists())
+            self.assertFalse(dst.exists())
+
 if __name__=="__main__":unittest.main()
