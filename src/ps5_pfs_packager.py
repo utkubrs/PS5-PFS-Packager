@@ -7098,6 +7098,31 @@ class App(tk.Tk):
                     self._qlog("Invalid PS4 folder: requires eboot.bin and sce_sys/param.sfo", "error")
                     play_error_once()
                     continue
+                # Let existing successful PS4 merge TEMP folders from v2.27 be
+                # repacked without extracting the two large PKGs again.
+                # NEVER write compatibility metadata into arbitrary user folders.
+                if os.path.isdir(target) and platform == "PS4":
+                    resolved_target = Path(target).resolve()
+                    resolved_temp = Path(temp_dir).resolve()
+                    app_owned_stage = (
+                        resolved_target.parent == resolved_temp
+                        and resolved_target.name.startswith("ps4_merge_")
+                        and not Path(target).is_symlink()
+                    )
+                    if app_owned_stage:
+                        try:
+                            shadow = prepare_ps4_shadowmount_metadata(
+                                target, remove_snd0=bool(self.ps4_remove_snd0_var.get()))
+                            self._qlog("PS4 ShadowMount+ param.json: " + shadow["param_json"], "success")
+                        except Exception as exc:
+                            self._qlog("PS4 metadata validation failed: " + str(exc), "error")
+                            play_error_once()
+                            continue
+                    elif not os.path.isfile(os.path.join(target, "sce_sys", "param.json")):
+                        self._qlog(
+                            "PS4 source has no sce_sys/param.json. ShadowMount+ may reject "
+                            "the finished image. Use a program-created PS4 merge TEMP folder "
+                            "or prepare metadata in a staged copy, not the original game.", "warn")
                 is_folder_source = os.path.isdir(target)
                 is_exfat_source = os.path.isfile(target) and target.lower().endswith((".exfat", ".ffpkg"))
 
