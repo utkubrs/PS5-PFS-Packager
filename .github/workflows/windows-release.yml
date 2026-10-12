@@ -58,6 +58,27 @@ jobs:
         shell: cmd
         run: call scripts\build_windows.bat <nul
 
+      - name: Smoke test bundled PKG extractor from isolated EXE
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $original = (Resolve-Path 'dist/ps5_pfs_packager.dist/PS5-PFS-Packager.exe').Path
+          $isolated = Join-Path $env:RUNNER_TEMP 'Standalone Test With Spaces'
+          New-Item -ItemType Directory -Force $isolated | Out-Null
+          $exe = Join-Path $isolated 'PS5-PFS-Packager.exe'
+          Copy-Item $original $exe -Force
+          if (Test-Path (Join-Path $isolated 'tools/pkgextract.exe')) {
+            throw 'Test invalid: isolated EXE unexpectedly has external pkgextract'
+          }
+          $stdoutFile = Join-Path $env:RUNNER_TEMP 'pkgextract-check.out'
+          $stderrFile = Join-Path $env:RUNNER_TEMP 'pkgextract-check.err'
+          $proc = Start-Process -FilePath $exe -ArgumentList '--check-pkg-extractor' -RedirectStandardOutput $stdoutFile -RedirectStandardError $stderrFile -PassThru -Wait
+          $out = (Get-Content $stdoutFile -Raw -ErrorAction SilentlyContinue) + (Get-Content $stderrFile -Raw -ErrorAction SilentlyContinue)
+          Write-Host $out
+          if ($proc.ExitCode -ne 0 -or $out -notmatch 'PKG_EXTRACTOR_OK:') {
+            throw "Bundled PKG extractor missing from onefile executable; exit=$($proc.ExitCode)"
+          }
+
       - name: Smoke test standalone MkPFS child invocation
         shell: pwsh
         run: |
@@ -130,6 +151,28 @@ jobs:
           $sha = (Get-FileHash "release/$name.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
           "$sha  $name.zip" | Set-Content "release/SHA256SUMS.txt" -Encoding ascii
           if (!(Test-Path "release/$name.zip")) { throw "ZIP creation failed" }
+
+      - name: Smoke test final ZIP layout and external tool
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $name = 'PS5-PFS-Packager-v2.27.0-Windows-x64'
+          $zip = Join-Path 'release' ($name + '.zip')
+          $dst = Join-Path $env:RUNNER_TEMP 'Installed Release With Spaces'
+          Expand-Archive $zip -DestinationPath $dst -Force
+          $exe = Join-Path $dst 'PS5-PFS-Packager.exe'
+          $tool = Join-Path $dst 'tools/pkgextract.exe'
+          if (!(Test-Path $exe) -or !(Test-Path $tool)) {
+            throw "Final ZIP must include both the app and tools/pkgextract.exe"
+          }
+          $log = Join-Path $env:RUNNER_TEMP 'pkgextract-final-zip-out.txt'
+          $err = Join-Path $env:RUNNER_TEMP 'pkgextract-final-zip-err.txt'
+          $proc = Start-Process -FilePath $exe -ArgumentList '--check-pkg-extractor' -RedirectStandardOutput $log -RedirectStandardError $err -PassThru -Wait
+          $output = (Get-Content $log -Raw -ErrorAction SilentlyContinue) + (Get-Content $err -Raw -ErrorAction SilentlyContinue)
+          Write-Host $output
+          if ($proc.ExitCode -ne 0 -or $output -notmatch 'PKG_EXTRACTOR_OK:') {
+            throw "PKG extraction diagnostic failed in extracted release ZIP"
+          }
 
       - uses: actions/upload-artifact@v4
         with:
