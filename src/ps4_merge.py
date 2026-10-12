@@ -1,7 +1,9 @@
 """PS4 base+update folder merger and conservative PARAM.SFO TITLE editor.
 
-Never changes TITLE_ID or CONTENT_ID, never replaces base artwork with update artwork.
-Works with extracted folders. PKG extraction is provided by ps4_inputs, separately.
+Use the update's PARAM.SFO when an update exists, while retaining the base
+game's CATEGORY for standalone mounting and its artwork. TITLE_ID and CONTENT_ID
+are never edited in the copied SFO. Works with extracted folders; PKG extraction
+is performed separately by ps4_inputs.
 """
 from __future__ import annotations
 import os
@@ -40,31 +42,46 @@ def sfo_fields(path: str) -> dict:
         out[key]=raw.split(b"\0",1)[0].decode("utf-8","replace") if fmt==0x0204 else raw.hex()
     return out
 
-def edit_sfo_title(path: str, title: str) -> None:
-    if not title.strip():raise ValueError("TITLE cannot be empty")
-    target=Path(path)
-    original=target.read_bytes()
-    data=bytearray(original)
-    entry=next((e for e in _parse_sfo(original) if e[0]=="TITLE"),None)
-    if entry is None:raise ValueError("TITLE field not found")
-    key,fmt,length,maximum,offset,pos=entry
-    if fmt!=0x0204:raise ValueError("TITLE is not UTF-8 text")
-    encoded=title.encode("utf-8")+b"\0"
-    if len(encoded)>maximum:
-        raise ValueError(f"TITLE too long: {len(encoded)} bytes, maximum {maximum} bytes")
-    data[offset:offset+maximum]=encoded.ljust(maximum,b"\0")
-    struct.pack_into("<I",data,pos+4,len(encoded))
-    new=bytes(data)
-    before=sfo_fields_from_bytes(original)
-    after=sfo_fields_from_bytes(new)
-    for field in ("TITLE_ID","CONTENT_ID"):
-        if before.get(field)!=after.get(field):raise ValueError("Identity field changed")
-    tmp=target.with_suffix(target.suffix+".tmp")
+def edit_sfo_text_fields(path: str, updates: dict[str, str]) -> None:
+    """Atomically edit text fields in a staged PARAM.SFO without changing IDs."""
+    target = Path(path)
+    original = target.read_bytes()
+    data = bytearray(original)
+    entries = {entry[0]: entry for entry in _parse_sfo(original)}
+    for key, value in updates.items():
+        entry = entries.get(key)
+        if entry is None:
+            raise ValueError(f"{key} field not found in param.sfo")
+        _, fmt, length, maximum, offset, pos = entry
+        if fmt != 0x0204:
+            raise ValueError(f"{key} is not UTF-8 text")
+        if key == "TITLE" and not value.strip():
+            raise ValueError("TITLE cannot be empty")
+        encoded = value.encode("utf-8") + b"\\0"
+        if len(encoded) > maximum:
+            raise ValueError(
+                f"{key} too long: {len(encoded)} bytes, maximum {maximum} bytes"
+            )
+        data[offset:offset + maximum] = encoded.ljust(maximum, b"\\0")
+        struct.pack_into("<I", data, pos + 4, len(encoded))
+    new = bytes(data)
+    before = sfo_fields_from_bytes(original)
+    after = sfo_fields_from_bytes(new)
+    for field in ("TITLE_ID", "CONTENT_ID"):
+        if before.get(field) != after.get(field):
+            raise ValueError(f"{field} changed")
+    tmp = target.with_suffix(target.suffix + ".tmp")
     try:
         tmp.write_bytes(new)
-        os.replace(tmp,target)
+        os.replace(tmp, target)
     finally:
-        if tmp.exists():tmp.unlink()
+        if tmp.exists():
+            tmp.unlink()
+
+
+def edit_sfo_title(path: str, title: str) -> None:
+    edit_sfo_text_fields(path, {"TITLE": title})
+
 
 def sfo_fields_from_bytes(data: bytes):
     return {key:(data[offset:offset+length].split(b"\0",1)[0].decode("utf-8","replace") if fmt==0x0204 else data[offset:offset+length].hex())
@@ -87,8 +104,10 @@ def merge_ps4_folders(base: str, update: str | None, destination: str, title: st
     if update_fields.get("CATEGORY") not in ("gp","gd",None):
         raise ValueError("Update CATEGORY is not a recognized PS4 game patch")
     def update_file(rel):
+        # Update PARAM.SFO is authoritative for APP_VER and other patch metadata.
+        # Base artwork and audio are still authoritative.
         return not (rel.parts and rel.parts[0].lower() == "sce_sys"
-                    and rel.name.lower() in ARTWORK.union({"param.sfo"}))
+                    and rel.name.lower() in ARTWORK)
 
     # Count work before copying so the UI can show real byte-based progress.
     base_files = [p for p in base.rglob("*") if p.is_file()]
@@ -131,9 +150,9 @@ def merge_ps4_folders(base: str, update: str | None, destination: str, title: st
             target_dir.mkdir(parents=True,exist_ok=True)
             for filename in files:
                 relfile=rel/filename
-                # Base game owns pictures, icons and base identities, including SFO.
+                # Keep base artwork; take the update's PARAM.SFO and APP_VER.
                 if rel.parts and rel.parts[0].lower()=="sce_sys":
-                    if filename.lower() in ARTWORK or filename.lower()=="param.sfo":
+                    if filename.lower() in ARTWORK:
                         continue
                 source_file = Path(root) / filename
                 target_file = target_dir / filename
@@ -146,9 +165,26 @@ def merge_ps4_folders(base: str, update: str | None, destination: str, title: st
                         progress(copied, total, done_files, total_files)
                 else:
                     copy_with_progress(source_file, target_file)
+        final_sfo = destination / "sce_sys" / "param.sfo"
+        edits = {}
+        if update is not None and update_fields.get("CATEGORY") == "gp":
+            # A merged image is mounted as the complete base application, not
+            # a separately installed patch. Retain the base game's CATEGORY.
+            edits["CATEGORY"] = base_fields.get("CATEGORY") or "gd"
         if title:
-            edit_sfo_title(str(destination/"sce_sys"/"param.sfo"),title)
-        return {"folder":str(destination),"title_id":base_fields.get("TITLE_ID",""),"title":title or base_fields.get("TITLE","")}
+            edits["TITLE"] = title
+        if edits:
+            edit_sfo_text_fields(str(final_sfo), edits)
+        final_fields = sfo_fields(str(final_sfo))
+        if final_fields.get("TITLE_ID") != base_fields.get("TITLE_ID"):
+            raise ValueError("Merged PARAM.SFO TITLE_ID differs from base game")
+        return {
+            "folder": str(destination),
+            "title_id": final_fields.get("TITLE_ID", ""),
+            "title": final_fields.get("TITLE", ""),
+            "app_ver": final_fields.get("APP_VER", ""),
+            "sfo_source": "update" if update is not None else "base",
+        }
     except BaseException:
         # Retain partial TEMP output when staged files have been moved; otherwise
         # deleting it would also erase the only remaining extracted copy.
