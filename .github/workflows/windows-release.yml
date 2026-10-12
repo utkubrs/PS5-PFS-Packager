@@ -1,5 +1,5 @@
 name: Build and publish Windows package
-# v2.28.0 release: integrated output/TEMP/filename settings and 15-language test build.
+# v2.30.0 release: integrated output/TEMP/filename settings and 15-language test build.
 
 on:
   pull_request:
@@ -107,13 +107,18 @@ jobs:
           New-Item -ItemType Directory -Force $src | Out-Null
           [IO.File]::WriteAllBytes((Join-Path $src 'eboot.bin'), [byte[]](0..127))
           [IO.File]::WriteAllText((Join-Path $src 'readme.txt'), 'Synthetic MkPFS smoke-test payload')
+          # The merge staging directory MUST NOT become the nested image name.
+          # ShadowMount+ needs sce_sys/param.json within the wrapped exFAT.
+          $meta = Join-Path $src 'sce_sys'
+          New-Item -ItemType Directory -Force $meta | Out-Null
+          [IO.File]::WriteAllText((Join-Path $meta 'param.json'), '{"titleId":"CUSA12381","titleName":"Chim Party (TR)","localizedParameters":{"en-US":{"titleName":"Chim Party (TR)"}}}')
           $env:TEMP = $work
           $env:TMP = $work
           $log = Join-Path $env:RUNNER_TEMP 'mkpfs-real-pack-out.txt'
           $err = Join-Path $env:RUNNER_TEMP 'mkpfs-real-pack-err.txt'
           $args = @('--internal-mkpfs', 'pack', 'folder',
             '--compress', '--threshold-gain', '0', '--max-compressed-ratio', '100',
-            '--no-adjust-output-file-extension', '--version', 'PS4',
+            '--no-adjust-output-file-extension', '--version', 'PS5',
             '--inode-bits', '32', '--temp-folder', $work,
             '--cpu-count', '2', '--compression-level', '1',
             '--block-size', 'auto', '--no-verify-structure', $src, $output)
@@ -128,12 +133,59 @@ jobs:
           if (!(Test-Path $output) -or (Get-Item $output).Length -lt 1024) {
             throw 'MkPFS did not create a valid-sized FFPFSC output'
           }
+          # Compare with the known-working PS4 PKG Tool: PS4 game content must
+          # reside in an OUTER PS5-profile PFS (version 2, not PS4 version 1).
+          $stream = [IO.File]::OpenRead($output)
+          try {
+            $hdr = New-Object byte[] 80
+            if ($stream.Read($hdr, 0, 80) -ne 80) { throw 'Truncated outer PFS header' }
+            $pfsVersion = [BitConverter]::ToInt64($hdr, 0)
+            $pfsMagic = [BitConverter]::ToInt64($hdr, 8)
+            $pfsBlock = [BitConverter]::ToUInt32($hdr, 0x20)
+          } finally { $stream.Dispose() }
+          if ($pfsVersion -ne 2 -or $pfsMagic -ne 20130315 -or $pfsBlock -ne 65536) {
+            throw "Incorrect outer PFS header: version=$pfsVersion magic=$pfsMagic block=$pfsBlock (expected PS5 v2, 64 KiB)"
+          }
+          Write-Host 'OUTER PS5 PFS v2 verified; PS4 game content preserved.'
+          # Inspect the real outer PFSC image to prevent the previous bug:
+          # ps4_merge_<random>.exfat instead of CUSA12381.exfat.
+          $outer = Join-Path $work 'inspect_outer'
+          $inner = Join-Path $work 'inspect_inner'
+          $extractLog = Join-Path $env:RUNNER_TEMP 'mkpfs-image-inspect.txt'
+          $extractErr = Join-Path $env:RUNNER_TEMP 'mkpfs-image-inspect.err'
+          $unpack = Start-Process -FilePath $exe -ArgumentList @(
+            '--internal-mkpfs','unpack',$output,$outer
+          ) -RedirectStandardOutput $extractLog -RedirectStandardError $extractErr -Wait -PassThru
+          if ($unpack.ExitCode -ne 0) {
+            Write-Host (Get-Content $extractLog -Raw -ErrorAction SilentlyContinue)
+            Write-Host (Get-Content $extractErr -Raw -ErrorAction SilentlyContinue)
+            throw "PFSC outer unpack failed: $($unpack.ExitCode)"
+          }
+          $nested = Get-ChildItem -Path $outer -Recurse -Filter '*.exfat' -File
+          if ($nested.Count -ne 1 -or $nested[0].Name -cne 'CUSA12381.exfat') {
+            throw "Wrong nested exFAT name; expected CUSA12381.exfat, got: $($nested.Name -join ', ')"
+          }
+          $deep = Start-Process -FilePath $exe -ArgumentList @(
+            '--internal-mkpfs','unpack','--deep',$output,$inner
+          ) -RedirectStandardOutput $extractLog -RedirectStandardError $extractErr -Wait -PassThru
+          if ($deep.ExitCode -ne 0) {
+            throw "PFSC nested exFAT unpack failed: $($deep.ExitCode)"
+          }
+          $json = Join-Path $inner 'sce_sys/param.json'
+          if (!(Test-Path $json)) {
+            throw 'Missing sce_sys/param.json from nested exFAT root'
+          }
+          $id = (Get-Content $json -Raw | ConvertFrom-Json).titleId
+          if ($id -ne 'CUSA12381') {
+            throw "Incorrect nested ShadowMount+ PS4 titleId: $id"
+          }
+          Write-Host 'FFPFSC LAYOUT OK: CUSA12381.exfat -> sce_sys/param.json'
 
       - name: Package executable and checksums
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $version = '2.28.0'
+          $version = '2.30.0'
           $name = "PS5-PFS-Packager-v$version-Windows-x64"
           New-Item -ItemType Directory -Force -Path release, "release/$name" | Out-Null
           $dist = 'dist/ps5_pfs_packager.dist'
@@ -156,7 +208,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $name = 'PS5-PFS-Packager-v2.28.0-Windows-x64'
+          $name = 'PS5-PFS-Packager-v2.30.0-Windows-x64'
           $zip = Join-Path 'release' ($name + '.zip')
           $dst = Join-Path $env:RUNNER_TEMP 'Installed Release With Spaces'
           Expand-Archive $zip -DestinationPath $dst -Force
@@ -176,7 +228,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: PS5-PFS-Packager-v2.28.0-Windows-x64
+          name: PS5-PFS-Packager-v2.30.0-Windows-x64
           path: |
             release/*.zip
             release/SHA256SUMS.txt
@@ -189,11 +241,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference = 'Stop'
-          $tag = 'v2.28.0'
+          $tag = 'v2.30.0'
           gh release view $tag --repo "$env:GITHUB_REPOSITORY" *> $null
           if ($LASTEXITCODE -ne 0) {
             gh release create $tag --repo "$env:GITHUB_REPOSITORY" --target "$env:GITHUB_SHA" --title "PS5 PFS Packager $tag" --notes "Windows x64 package built from the repository with MkPFS 1.1.0. See README for instructions."
             if ($LASTEXITCODE -ne 0) { throw "Release creation failed" }
           }
-          gh release upload $tag "release/PS5-PFS-Packager-v2.28.0-Windows-x64.zip" "release/SHA256SUMS.txt" --clobber --repo "$env:GITHUB_REPOSITORY"
+          gh release upload $tag "release/PS5-PFS-Packager-v2.30.0-Windows-x64.zip" "release/SHA256SUMS.txt" --clobber --repo "$env:GITHUB_REPOSITORY"
           if ($LASTEXITCODE -ne 0) { throw "Release upload failed" }

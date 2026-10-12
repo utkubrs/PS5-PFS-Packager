@@ -62,7 +62,7 @@ def detect_logical_cpu_count() -> int:
     except Exception:
         return 1
 
-APP_VERSION = "2.28"
+APP_VERSION = "2.30"
 APP_TITLE = "PS5 PFS Paketleyici"
 
 MKPFS_RELEASES_URL = "https://github.com/PSBrew/MkPFS/releases"
@@ -3613,6 +3613,7 @@ from ps4_inputs import is_ps4_game_folder, detect_ps4_title_id, inspect_ps4_sour
 from ps4_merge import merge_ps4_folders, edit_sfo_title, sfo_fields
 from ps4_merge_i18n import merge_text
 from ps4_cleanup import cleanup_ps4_temp
+from ps4_shadowmount_metadata import prepare_ps4_shadowmount_metadata, prepare_existing_temp_merge, ffpfsc_outer_pfs_profile, validate_ffpfsc_outer_header
 
 class App(tk.Tk):
     def __init__(self):
@@ -3664,6 +3665,7 @@ class App(tk.Tk):
         self.shutdown_var = tk.BooleanVar(value=False)
         self.fakelib_var = tk.BooleanVar(value=False)
         self.delete_source_var = tk.BooleanVar(value=False)
+        self.ps4_remove_snd0_var = tk.BooleanVar(value=False)
         self.overwrite_output_var = tk.BooleanVar(value=True)
 
         self.progress_var = tk.DoubleVar(value=0)
@@ -3773,6 +3775,7 @@ class App(tk.Tk):
             self.shutdown_var.set(get_bool("shutdown_pc", self.shutdown_var.get()))
             self.fakelib_var.set(get_bool("add_fakelib", self.fakelib_var.get()))
             self.delete_source_var.set(get_bool("delete_source", self.delete_source_var.get()))
+            self.ps4_remove_snd0_var.set(get_bool("ps4_remove_snd0_at9", False))
 
             language = get_text("language", "")
             if language in LANGUAGE_DISPLAY:
@@ -3798,6 +3801,7 @@ class App(tk.Tk):
             "extra_verify": "1" if self.extra_verify_var.get() else "0",
             "add_fakelib": "1" if self.fakelib_var.get() else "0",
             "delete_source": "1" if self.delete_source_var.get() else "0",
+            "ps4_remove_snd0_at9": "1" if self.ps4_remove_snd0_var.get() else "0",
             "shutdown_pc": "1" if self.shutdown_var.get() else "0",
             "language": self.lang_code(),
         }
@@ -3821,6 +3825,7 @@ class App(tk.Tk):
             self.shutdown_var,
             self.fakelib_var,
             self.delete_source_var,
+            self.ps4_remove_snd0_var,
             self.language_display_var,
         ]
         for var in watched_vars:
@@ -6403,7 +6408,8 @@ class App(tk.Tk):
         dlg.resizable(False, False)
         dlg.withdraw()
         dlg.transient(self)
-        width, height = 940, 616
+        width = 940
+        height = min(710, max(580, dlg.winfo_screenheight() - 90))
         self.update_idletasks()
         dlg.update_idletasks()
         # Center on the main application; clamp to the visible screen.
@@ -6424,6 +6430,10 @@ class App(tk.Tk):
             "green": "#159b53",
         }
         is_tr = self.lang_code() == "tr"
+        # Anchor the action area to the bottom before creating the form;
+        # Tk keeps it visible even when screen scaling reduces available space.
+        footer = tk.Frame(dlg, bg=palette["bg"])
+        footer.pack(side="bottom", fill="x", padx=28, pady=(0, 14))
         header = tk.Frame(dlg, bg=palette["bg"])
         header.pack(fill="x", padx=28, pady=(24, 14))
         tk.Label(header, text=mt("merge_title"),
@@ -6500,6 +6510,13 @@ class App(tk.Tk):
                         settings[key].set(selected)
                 options.append((mt("browse"), browse_dir))
             entry_row(mt(name), settings[name], index, options)
+        tk.Checkbutton(
+            panel, text=mt("remove_snd0"), variable=self.ps4_remove_snd0_var,
+            command=self.save_config, bg=palette["surface"], fg=palette["text"],
+            activebackground=palette["surface"], activeforeground=palette["text"],
+            selectcolor="#30445e", font=("Segoe UI", 10, "bold"),
+            anchor="w", padx=0, pady=3
+        ).grid(row=8, column=1, columnspan=3, sticky="w", pady=(10, 0))
         # Keep suggestions editable. Later edits to TITLE or output filename win
         # over subsequent input changes and over internal PKG metadata.
         suggested_title = [""]
@@ -6534,8 +6551,8 @@ class App(tk.Tk):
                  fg=palette["muted"], wraplength=860,
                  font=("Segoe UI", 9)).pack(pady=(4, 7))
         status = tk.StringVar(value=mt("ready"))
-        tk.Label(dlg, textvariable=status, bg=palette["bg"],
-                 fg="#86efac", font=("Segoe UI", 10, "bold")).pack(pady=(3, 0))
+        tk.Label(footer, textvariable=status, bg=palette["bg"],
+                 fg="#86efac", font=("Segoe UI", 10, "bold")).pack(pady=(0, 9))
         def merge():
             if getattr(self, "_ps4_merge_busy", False):
                 return
@@ -6566,6 +6583,7 @@ class App(tk.Tk):
             output_name = settings["filename"].get().strip()
             auto_filename = not filename_manually_edited[0]
             auto_title = title == suggested_title[0]
+            remove_snd0 = bool(self.ps4_remove_snd0_var.get())
             if not output_name or not output_name.lower().endswith(".ffpfsc"):
                 messagebox.showerror("PS4", mt("filename_error"), parent=dlg)
                 return
@@ -6627,7 +6645,15 @@ class App(tk.Tk):
                         move_base=game_is_temporary,
                         move_update=update_is_temporary,
                     )
-                    merged_id = result.get("title_id") or detect_ps4_title_id(result["folder"])
+                    # Generate PS4 ShadowMount+ JSON inside the merged TEMP
+                    # tree; never modify user-selected source folders.
+                    metadata = prepare_ps4_shadowmount_metadata(
+                        result["folder"], remove_snd0=remove_snd0)
+                    self._qlog("PS4 ShadowMount+ param.json: " + metadata["param_json"], "success")
+                    if remove_snd0:
+                        self._qlog("snd0.at9: " + (
+                            "silindi" if metadata["snd0_removed"] else "dosya zaten yok"), "info")
+                    merged_id = metadata["title_id"]
                     # If the PKG header didn't advertise CUSA, resolve it after extraction.
                     final_output_name = ((merged_id + ".ffpfsc") if auto_filename and merged_id else output_name)
                     def done():
@@ -6664,11 +6690,13 @@ class App(tk.Tk):
                         messagebox.showerror(mt("error"), error, parent=self)
                     self.after(0, failed)
             threading.Thread(target=worker, daemon=True).start()
-        tk.Button(dlg, text=mt("submit"), command=merge,
-                  bg=palette["green"], fg="white", activebackground="#0f7b43",
-                  activeforeground="white", relief="flat", bd=0,
-                  font=("Segoe UI", 12, "bold"), padx=29, pady=12,
-                  cursor="hand2").pack(pady=(12, 16))
+        tk.Button(
+            footer, text=mt("submit"), command=merge,
+            bg=palette["green"], fg="white", activebackground="#0f7b43",
+            activeforeground="white", relief="flat", bd=0,
+            font=("Segoe UI", 12, "bold"), width=33, height=2,
+            padx=18, pady=7, cursor="hand2",
+        ).pack(anchor="center")
         dlg.deiconify()
         dlg.lift()
         dlg.focus_force()
@@ -7127,6 +7155,23 @@ class App(tk.Tk):
                     self._qlog("Invalid PS4 folder: requires eboot.bin and sce_sys/param.sfo", "error")
                     play_error_once()
                     continue
+                # v2.28 generated valid compressed images but older TEMP merges
+                # may still lack the ShadowMount+ PS4 JSON. Repair only a
+                # recognized program-owned ps4_merge_... folder; never edit
+                # arbitrary selected source game directories.
+                if platform == "PS4" and os.path.isdir(target):
+                    try:
+                        repaired = prepare_existing_temp_merge(
+                            target, temp_dir, remove_snd0=bool(self.ps4_remove_snd0_var.get()))
+                        if repaired:
+                            self._qlog(
+                                "PS4 ShadowMount+ metadata doğrulandı: "
+                                + repaired["title_id"] + ".exfat", "success")
+                    except Exception as metadata_error:
+                        self._qlog("PS4 metadata hazırlığı başarısız: "
+                                   + str(metadata_error), "error")
+                        play_error_once()
+                        continue
                 is_folder_source = os.path.isdir(target)
                 is_exfat_source = os.path.isfile(target) and target.lower().endswith((".exfat", ".ffpkg"))
 
@@ -7202,6 +7247,14 @@ class App(tk.Tk):
                         )
                         continue
 
+                # ShadowMount+ runs on PS5 even for PS4 game images.
+                # The working PS4 PKG Tool writes outer PFS header version 2.
+                outer_profile = ffpfsc_outer_pfs_profile(platform)
+                if platform == "PS4":
+                    self._qlog(
+                        "PS4 oyun, PS5 FFPFSC dış kapsayıcı profili (PFS v2) ile paketleniyor.",
+                        "info",
+                    )
                 pack_progress_scale = 95 if extra_verify else 100
 
                 if is_exfat_source:
@@ -7211,7 +7264,7 @@ class App(tk.Tk):
                         "--compress",
                         "--threshold-gain", "0",
                         "--max-compressed-ratio", "100",
-                        "--version", platform,
+                        "--version", outer_profile,
                         "--inode-bits", "32",
                         "--temp-folder", temp_dir,
                         "--cpu-count", str(cpu),
@@ -7236,7 +7289,7 @@ class App(tk.Tk):
                         "--threshold-gain", "0",
                         "--max-compressed-ratio", "100",
                         "--no-adjust-output-file-extension",
-                        "--version", platform,
+                        "--version", outer_profile,
                         "--inode-bits", "32",
                         *(["--require-game-files"] if platform == "PS5" else []),
                         "--temp-folder", temp_dir,
@@ -7363,6 +7416,17 @@ class App(tk.Tk):
                     )
                     self._qlog(self.tr("friendly_error_title"), "title")
                     self._qlog(self._friendly_failure_message(), "warn")
+                    play_error_once()
+                    continue
+
+                # Do not mark the operation successful or delete TEMP unless
+                # the outer header is mountable by ShadowMount+ (PS5 PFS v2).
+                try:
+                    version, size = validate_ffpfsc_outer_header(out_path)
+                    self._qlog(f"FFPFSC dış PFS doğrulandı: v{version}, blok {size}", "success")
+                except (OSError, ValueError) as header_error:
+                    self._qlog("FFPFSC kapsayıcı doğrulaması başarısız: "
+                               + str(header_error), "error")
                     play_error_once()
                     continue
 
