@@ -57,12 +57,12 @@ def edit_sfo_text_fields(path: str, updates: dict[str, str]) -> None:
             raise ValueError(f"{key} is not UTF-8 text")
         if key == "TITLE" and not value.strip():
             raise ValueError("TITLE cannot be empty")
-        encoded = value.encode("utf-8") + b"\\0"
+        encoded = value.encode("utf-8") + b"\0"
         if len(encoded) > maximum:
             raise ValueError(
                 f"{key} too long: {len(encoded)} bytes, maximum {maximum} bytes"
             )
-        data[offset:offset + maximum] = encoded.ljust(maximum, b"\\0")
+        data[offset:offset + maximum] = encoded.ljust(maximum, b"\0")
         struct.pack_into("<I", data, pos + 4, len(encoded))
     new = bytes(data)
     before = sfo_fields_from_bytes(original)
