@@ -2,6 +2,11 @@ name: Build and publish Windows package
 # v2.26.0 release: integrated output/TEMP/filename settings and 15-language test build.
 
 on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'scripts/build_windows.bat'
+      - '.github/workflows/windows-release.yml'
   push:
     branches: [main]
     paths:
@@ -135,6 +140,7 @@ jobs:
           if-no-files-found: error
 
       - name: Publish GitHub release
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
