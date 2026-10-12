@@ -6439,6 +6439,12 @@ class App(tk.Tk):
         # over subsequent input changes and over internal PKG metadata.
         suggested_title = [""]
         suggested_filename = [settings["filename"].get().strip()]
+        filename_manually_edited = [False]
+        setting_filename_internally = [False]
+        def track_filename_edit(*_):
+            if not setting_filename_internally[0] and entries[0].get().strip():
+                filename_manually_edited[0] = True
+        settings["filename"].trace_add("write", track_filename_edit)
         def update_ps4_suggestions(*_):
             source = entries[0].get().strip()
             if not source:
@@ -6451,9 +6457,12 @@ class App(tk.Tk):
                 entries[2].set(title_name)
             suggested_title[0] = title_name
             candidate = ((title_id or safe_filename(title_name)) + ".ffpfsc")
-            current_name = settings["filename"].get().strip()
-            if current_name in ("", "PPSA00000.ffpfsc", "CUSA00000.ffpfsc", suggested_filename[0]):
-                settings["filename"].set(candidate)
+            if not filename_manually_edited[0]:
+                setting_filename_internally[0] = True
+                try:
+                    settings["filename"].set(candidate)
+                finally:
+                    setting_filename_internally[0] = False
             suggested_filename[0] = candidate
         entries[0].trace_add("write", update_ps4_suggestions)
         tk.Label(dlg, text=mt("note"),
@@ -6473,7 +6482,7 @@ class App(tk.Tk):
                 return
             output_dir = normalize_path(settings["output"].get().strip())
             output_name = settings["filename"].get().strip()
-            auto_filename = output_name == suggested_filename[0]
+            auto_filename = not filename_manually_edited[0]
             auto_title = title == suggested_title[0]
             if not output_name or not output_name.lower().endswith(".ffpfsc"):
                 messagebox.showerror("PS4", mt("filename_error"), parent=dlg)
