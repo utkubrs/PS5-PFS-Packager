@@ -62,7 +62,7 @@ def detect_logical_cpu_count() -> int:
     except Exception:
         return 1
 
-APP_VERSION = "2.24"
+APP_VERSION = "2.25"
 APP_TITLE = "PS5 PFS Paketleyici"
 
 MKPFS_RELEASES_URL = "https://github.com/PSBrew/MkPFS/releases"
@@ -3609,7 +3609,7 @@ def run_internal_mkpfs(args: list[str]) -> int:
 
 
 from upgrade_features import inspect_game, validate_preflight, recommended_block_size
-from ps4_inputs import is_ps4_game_folder, detect_ps4_title_id, extract_pkg
+from ps4_inputs import is_ps4_game_folder, detect_ps4_title_id, inspect_ps4_source, extract_pkg
 from ps4_merge import merge_ps4_folders, edit_sfo_title, sfo_fields
 from ps4_merge_i18n import merge_text
 
@@ -6418,13 +6418,6 @@ class App(tk.Tk):
                 tk.Button(frame, text=mt("folder"), command=lambda v=value:
                           v.set(filedialog.askdirectory(parent=dlg) or v.get())).pack(side="left")
             entries.append(value)
-            if len(entries) == 1:
-                def infer_title(*_):
-                    name = os.path.splitext(os.path.basename(value.get().strip()))[0]
-                    # Keep user-modified titles; only auto-fill if still empty.
-                    if len(entries) >= 3 and not entries[2].get().strip():
-                        entries[2].set(name.replace("_", " ").replace("-", " "))
-                value.trace_add("write", infer_title)
         # Values are initialized from the main screen and synchronized when accepted.
         settings = {
             "output": tk.StringVar(value=self.output_dir_var.get()),
@@ -6442,6 +6435,36 @@ class App(tk.Tk):
                           command=lambda key=name: settings[key].set(
                               filedialog.askdirectory(parent=dlg) or settings[key].get()
                           )).pack(side="left", padx=3)
+        # Keep suggestions editable. Later edits to TITLE or output filename win
+        # over subsequent input changes and over internal PKG metadata.
+        suggested_title = [""]
+        suggested_filename = [settings["filename"].get().strip()]
+        filename_manually_edited = [False]
+        setting_filename_internally = [False]
+        def track_filename_edit(*_):
+            if not setting_filename_internally[0] and entries[0].get().strip():
+                filename_manually_edited[0] = True
+        settings["filename"].trace_add("write", track_filename_edit)
+        def update_ps4_suggestions(*_):
+            source = entries[0].get().strip()
+            if not source:
+                return
+            metadata = inspect_ps4_source(source)
+            title_name = metadata.get("title", "")
+            title_id = metadata.get("title_id", "")
+            old_title = suggested_title[0]
+            if not entries[2].get().strip() or entries[2].get().strip() == old_title:
+                entries[2].set(title_name)
+            suggested_title[0] = title_name
+            candidate = ((title_id or safe_filename(title_name)) + ".ffpfsc")
+            if not filename_manually_edited[0]:
+                setting_filename_internally[0] = True
+                try:
+                    settings["filename"].set(candidate)
+                finally:
+                    setting_filename_internally[0] = False
+            suggested_filename[0] = candidate
+        entries[0].trace_add("write", update_ps4_suggestions)
         tk.Label(dlg, text=mt("note"),
                  bg="#151515", fg="#cbd5e1", wraplength=710).pack(pady=12)
         status = tk.StringVar(value=mt("ready"))
@@ -6459,6 +6482,8 @@ class App(tk.Tk):
                 return
             output_dir = normalize_path(settings["output"].get().strip())
             output_name = settings["filename"].get().strip()
+            auto_filename = not filename_manually_edited[0]
+            auto_title = title == suggested_title[0]
             if not output_name or not output_name.lower().endswith(".ffpfsc"):
                 messagebox.showerror("PS4", mt("filename_error"), parent=dlg)
                 return
@@ -6484,23 +6509,17 @@ class App(tk.Tk):
                 try:
                     import uuid
                     def stage(value):
-                        if os.path.isfile(value) and value.lower().endswith(".pkg"):
-                            return extract_pkg(value, temp, lambda m: self._qlog(m, "info"))
+                        if os.path.isfile(value) and value.lower().endswith((".pkg", ".fpkg")):
+                            return extract_pkg(value, temp, lambda m: self._qlog(m, "info")), True
                         if os.path.isdir(value):
-                            return value
+                            return value, False
                         raise ValueError(mt("invalid") + value)
-                    game_dir = stage(base)
-                    update_dir = stage(patch)
+                    game_dir, game_is_temporary = stage(base)
+                    update_dir, update_is_temporary = stage(patch)
                     dst = os.path.join(temp, "ps4_merge_" + uuid.uuid4().hex[:10])
-                    # Use actual PARAM.SFO title when the dialog still shows the
-                    # automatic filename suggestion; explicit user edits take precedence.
-                    original_name = os.path.splitext(os.path.basename(base))[0].replace("_", " ").replace("-", " ")
-                    effective_title = title
-                    if effective_title == original_name:
-                        try:
-                            effective_title = (sfo_fields(os.path.join(game_dir, "sce_sys", "param.sfo")).get("TITLE", "") or effective_title)
-                        except (OSError, ValueError):
-                            pass
+                    # The automatic preview must not overwrite the actual SFO TITLE.
+                    # Only an explicitly edited title is patched into PARAM.SFO.
+                    effective_title = "" if auto_title else title
                     import time
                     last_report = [0.0]
                     def progress(copied, total, files, count):
@@ -6518,18 +6537,32 @@ class App(tk.Tk):
                             self._merge_last_log = now
                             self._qlog(msg, "info")
                     self._qphase(mt("copying"))
-                    result = merge_ps4_folders(game_dir, update_dir, dst, effective_title, progress=progress)
+                    result = merge_ps4_folders(
+                        game_dir, update_dir, dst, effective_title,
+                        progress=progress,
+                        move_base=game_is_temporary,
+                        move_update=update_is_temporary,
+                    )
+                    merged_id = result.get("title_id") or detect_ps4_title_id(result["folder"])
+                    # If the PKG header didn't advertise CUSA, resolve it after extraction.
+                    final_output_name = ((merged_id + ".ffpfsc") if auto_filename and merged_id else output_name)
                     def done():
+                        # Automatically continue into the existing single-game packer.
+                        # UI changes and Tk worker startup must happen on the Tk thread.
+                        if self.batch_var.get():
+                            self.batch_var.set(False)
+                            self.on_mode_changed()
+                        self.platform_var.set("PS4")
                         self.source_var.set(result["folder"])
-                        # Source change performs auto-naming; restore the explicitly
-                        # selected FFPFSC output name from the merge dialog.
-                        self.file_name_var.set(output_name)
+                        self.file_name_var.set(final_output_name)
                         self._ps4_merge_busy = False
                         self._qprogress(100)
                         self._qstatus(mt("done"))
-                        self._log("PS4 birleşimi hazır: " + result["folder"], "success")
+                        self._log("PS4 birleştirildi: " + result["folder"], "success")
+                        self._log("FFPFSC otomatik başlatılıyor: " + final_output_name, "info")
+                        self._retain_ps4_merge_log = True
                         self._update_start_button_state()
-                        messagebox.showinfo("PS4", mt("done"))
+                        self.after_idle(self.start)
                     self.after(0, done)
                 except Exception as exc:
                     error = str(exc)
@@ -6853,7 +6886,14 @@ class App(tk.Tk):
         return True
 
     def start(self):
-        self.on_mode_changed()
+        if getattr(self, "_retain_ps4_merge_log", False):
+            # Mode refresh normally auto-generates the filename. Keep the
+            # manually selected name from the preceding PS4 merge dialog.
+            selected_output_name = self.file_name_var.get()
+            self.on_mode_changed()
+            self.file_name_var.set(selected_output_name)
+        else:
+            self.on_mode_changed()
         if not self._is_ready_to_start():
             return
         if not self.validate():
@@ -6866,7 +6906,9 @@ class App(tk.Tk):
         self.status_var.set(self.tr("status_running"))
         self._refresh_progress_status_label()
         self.phase_var.set(self.tr("phase_preparing"))
-        self.log_text.delete("1.0", "end")
+        if not getattr(self, "_retain_ps4_merge_log", False):
+            self.log_text.delete("1.0", "end")
+        self._retain_ps4_merge_log = False
 
         self._set_running(True)
         self.worker_thread = threading.Thread(target=self._worker, daemon=True)

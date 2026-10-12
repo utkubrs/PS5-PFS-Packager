@@ -70,7 +70,7 @@ def sfo_fields_from_bytes(data: bytes):
     return {key:(data[offset:offset+length].split(b"\0",1)[0].decode("utf-8","replace") if fmt==0x0204 else data[offset:offset+length].hex())
             for key,fmt,length,maximum,offset,_ in _parse_sfo(data)}
 
-def merge_ps4_folders(base: str, update: str, destination: str, title: str="", progress=None) -> dict:
+def merge_ps4_folders(base: str, update: str, destination: str, title: str="", progress=None, move_base: bool=False, move_update: bool=False) -> dict:
     base,update,destination=map(lambda p:Path(p).resolve(),(base,update,destination))
     if not base.is_dir() or not (base/"eboot.bin").is_file() or not (base/"sce_sys"/"param.sfo").is_file():
         raise ValueError("Base must contain eboot.bin and sce_sys/param.sfo")
@@ -113,7 +113,16 @@ def merge_ps4_folders(base: str, update: str, destination: str, title: str="", p
             progress(copied, total, done_files, total_files)
         return str(dst)
     try:
-        shutil.copytree(base,destination,copy_function=copy_with_progress)
+        if move_base:
+            # Only caller-owned extracted TEMP folders may use this fast rename.
+            base_bytes = sum(p.stat().st_size for p in base_files)
+            os.rename(base, destination)
+            copied += base_bytes
+            done_files += len(base_files)
+            if progress:
+                progress(copied, total, done_files, total_files)
+        else:
+            shutil.copytree(base,destination,copy_function=copy_with_progress)
         for root,dirs,files in os.walk(update):
             rel=Path(root).relative_to(update)
             target_dir=destination/rel
@@ -124,10 +133,23 @@ def merge_ps4_folders(base: str, update: str, destination: str, title: str="", p
                 if rel.parts and rel.parts[0].lower()=="sce_sys":
                     if filename.lower() in ARTWORK or filename.lower()=="param.sfo":
                         continue
-                copy_with_progress(Path(root)/filename,target_dir/filename)
+                source_file = Path(root) / filename
+                target_file = target_dir / filename
+                if move_update:
+                    length = source_file.stat().st_size
+                    os.replace(source_file, target_file)
+                    copied += length
+                    done_files += 1
+                    if progress:
+                        progress(copied, total, done_files, total_files)
+                else:
+                    copy_with_progress(source_file, target_file)
         if title:
             edit_sfo_title(str(destination/"sce_sys"/"param.sfo"),title)
         return {"folder":str(destination),"title_id":base_fields.get("TITLE_ID",""),"title":title or base_fields.get("TITLE","")}
     except BaseException:
-        if destination.exists():shutil.rmtree(destination,ignore_errors=True)
+        # Retain partial TEMP output when staged files have been moved; otherwise
+        # deleting it would also erase the only remaining extracted copy.
+        if destination.exists() and not (move_base or move_update):
+            shutil.rmtree(destination, ignore_errors=True)
         raise

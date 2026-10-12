@@ -15,19 +15,57 @@ def is_ps4_game_folder(path: str) -> bool:
     return p.is_dir() and (p/"eboot.bin").is_file() and (p/"sce_sys"/"param.sfo").is_file()
 
 def detect_ps4_title_id(path: str) -> str:
-    p=Path(path)
-    for value in (p.name, p.parent.name):
-        m=re.search(r"CUSA\d{5}",value,re.I)
-        if m:return m.group(0).upper()
-    sfo=p/"sce_sys"/"param.sfo"
+    """Prefer real SFO/PKG identity to an arbitrary filename."""
+    p = Path(path)
+    sfo = p / "sce_sys" / "param.sfo"
     if sfo.is_file():
         try:
-            data=sfo.read_bytes()
-            for pat in (rb"CUSA\d{5}",):
-                m=re.search(pat,data,re.I)
-                if m:return m.group().decode("ascii").upper()
-        except OSError:pass
+            from ps4_merge import sfo_fields
+            title_id = sfo_fields(str(sfo)).get("TITLE_ID", "")
+            if re.fullmatch(r"CUSA\d{5}", title_id, re.I):
+                return title_id.upper()
+        except (OSError, ValueError):
+            pass
+    if p.is_file() and p.suffix.lower() in (".pkg", ".fpkg"):
+        try:
+            # PS4 PKG headers normally expose the CONTENT_ID in clear text.
+            # Read only the header; never load multi-GB packages into memory.
+            with p.open("rb") as stream:
+                header = stream.read(65536)
+            match = re.search(rb"(?:[A-Z]{2}\d{4}-)?(CUSA\d{5})(?:_\d{2})?", header, re.I)
+            if match:
+                return match.group(1).decode("ascii").upper()
+        except OSError:
+            pass
+    for value in (p.name, p.parent.name):
+        match = re.search(r"CUSA\d{5}", value, re.I)
+        if match:
+            return match.group(0).upper()
     return ""
+
+
+def inspect_ps4_source(path: str) -> dict:
+    """Best-effort title/ID preview without unpacking the selected PKG.
+
+    Folder titles come from PARAM.SFO. For PKGs the visible filename is used
+    until extraction makes their internal PARAM.SFO available.
+    """
+    p = Path(path)
+    title_id = detect_ps4_title_id(path)
+    title = ""
+    sfo = p / "sce_sys" / "param.sfo"
+    if sfo.is_file():
+        try:
+            from ps4_merge import sfo_fields
+            title = sfo_fields(str(sfo)).get("TITLE", "").strip()
+        except (OSError, ValueError):
+            pass
+    if not title:
+        stem = p.stem if p.is_file() else p.name
+        stem = re.sub(r"CUSA\d{5}", "", stem, flags=re.I)
+        stem = re.sub(r"(?i)(?:[-_. ]+(?:TR|TURKCE|UPDATE|PATCH|V\d+|\d+))+$", "", stem)
+        title = re.sub(r"[_]+", " ", stem).strip(" -_.")
+    return {"title": title, "title_id": title_id}
 
 def extract_pkg(source: str, temp_dir: str, log=None) -> str:
     """Extract using pkgextract -o; caller validates extracted game and converts it."""
