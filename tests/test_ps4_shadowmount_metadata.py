@@ -1,12 +1,14 @@
 import json
 import shutil
+import hashlib
+import struct
 import tempfile
 import unittest
 from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from ps4_shadowmount_metadata import prepare_ps4_shadowmount_metadata, prepare_existing_temp_merge
+from ps4_shadowmount_metadata import prepare_ps4_shadowmount_metadata, prepare_existing_temp_merge, ffpfsc_outer_pfs_profile, validate_ffpfsc_outer_header, PFS_MAGIC
 from test_ps4_merge import make_sfo
 
 
@@ -84,6 +86,41 @@ class PS4ShadowMountMetadataTest(unittest.TestCase):
             self.assertIsNone(prepare_existing_temp_merge(str(original), str(temp), True))
             self.assertTrue((original / "sce_sys" / "snd0.at9").exists())
             self.assertFalse((original / "sce_sys" / "param.json").exists())
+
+
+    def test_ps4_game_uses_ps5_outer_container_profile(self):
+        self.assertEqual(ffpfsc_outer_pfs_profile("PS4"), "PS5")
+        self.assertEqual(ffpfsc_outer_pfs_profile("PS5"), "PS5")
+        with self.assertRaises(ValueError):
+            ffpfsc_outer_pfs_profile("PS3")
+
+    def test_outer_header_rejects_old_ps4_pfs_version_one(self):
+        with tempfile.TemporaryDirectory() as root:
+            out = Path(root) / "CUSA12381.ffpfsc"
+            header = bytearray(0x10000)
+            struct.pack_into("<qq", header, 0, 1, PFS_MAGIC)
+            struct.pack_into("<I", header, 0x20, 0x10000)
+            struct.pack_into("<H", header, 0x1C, 8)
+            out.write_bytes(header)
+            with self.assertRaisesRegex(ValueError, "version 2"):
+                validate_ffpfsc_outer_header(str(out))
+            struct.pack_into("<q", header, 0, 2)
+            out.write_bytes(header)
+            self.assertEqual(validate_ffpfsc_outer_header(str(out)), (2, 65536))
+
+    def test_npbind_sha1_footer_fix_in_staged_copy_only(self):
+        with tempfile.TemporaryDirectory() as folder:
+            original, staged = self.make_game(Path(folder))
+            payload = bytearray(0x80 + 0x180 + 20)
+            struct.pack_into(">IIQQQ", payload, 0, 0xD294A018, 1,
+                             len(payload), 0x180, 1)
+            payload[-20:] = b"X" * 20
+            (staged / "sce_sys" / "npbind.dat").write_bytes(payload)
+            result = prepare_ps4_shadowmount_metadata(str(staged))
+            self.assertTrue(result["npbind_repaired"])
+            repaired = (staged / "sce_sys" / "npbind.dat").read_bytes()
+            self.assertEqual(repaired[-20:], hashlib.sha1(repaired[:-20]).digest())
+            self.assertFalse((original / "sce_sys" / "npbind.dat").exists())
 
 
 if __name__ == "__main__":
