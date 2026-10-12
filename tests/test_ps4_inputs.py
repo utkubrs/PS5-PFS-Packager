@@ -82,5 +82,33 @@ class PS4InputsTests(unittest.TestCase):
                     with self.assertRaisesRegex(RuntimeError, "PKG extractor missing"):
                         extract_pkg(str(pkg), str(base), app_dir=str(base/"nonexistent"))
 
+    def test_previous_extraction_is_preserved_and_new_folder_is_used(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pkg = root/"Game.pkg"
+            pkg.write_bytes(b"PKG")
+            previous = root/"ps4_pkg_extract"/"Game"
+            previous.mkdir(parents=True)
+            (previous/"keep.txt").write_text("DO NOT DELETE")
+            observed = []
+
+            def fake_popen(args, **kwargs):
+                output = Path(args[-1])
+                observed.append(output)
+                (output/"sce_sys").mkdir(parents=True)
+                (output/"sce_sys"/"param.sfo").write_bytes(b"Test")
+                (output/"eboot.bin").touch()
+                child = mock.Mock()
+                child.communicate.return_value = ("", None)
+                child.returncode = 0
+                return child
+
+            with mock.patch("ps4_inputs.find_pkg_extractor", return_value="fake-pkgextract.exe"):
+                with mock.patch("ps4_inputs.subprocess.Popen", side_effect=fake_popen):
+                    result = extract_pkg(str(pkg), str(root))
+            self.assertEqual(Path(result), observed[0])
+            self.assertNotEqual(Path(result), previous)
+            self.assertEqual((previous/"keep.txt").read_text(), "DO NOT DELETE")
+
 if __name__=="__main__":
     unittest.main()
