@@ -3613,7 +3613,7 @@ from ps4_inputs import is_ps4_game_folder, detect_ps4_title_id, inspect_ps4_sour
 from ps4_merge import merge_ps4_folders, edit_sfo_title, sfo_fields
 from ps4_merge_i18n import merge_text
 from ps4_cleanup import cleanup_ps4_temp
-from ps4_shadowmount_metadata import prepare_ps4_shadowmount_metadata, prepare_existing_temp_merge
+from ps4_shadowmount_metadata import prepare_ps4_shadowmount_metadata, prepare_existing_temp_merge, ffpfsc_outer_pfs_profile, validate_ffpfsc_outer_header
 
 class App(tk.Tk):
     def __init__(self):
@@ -7247,6 +7247,14 @@ class App(tk.Tk):
                         )
                         continue
 
+                # ShadowMount+ runs on PS5 even for PS4 game images.
+                # The working PS4 PKG Tool writes outer PFS header version 2.
+                outer_profile = ffpfsc_outer_pfs_profile(platform)
+                if platform == "PS4":
+                    self._qlog(
+                        "PS4 oyun, PS5 FFPFSC dış kapsayıcı profili (PFS v2) ile paketleniyor.",
+                        "info",
+                    )
                 pack_progress_scale = 95 if extra_verify else 100
 
                 if is_exfat_source:
@@ -7256,7 +7264,7 @@ class App(tk.Tk):
                         "--compress",
                         "--threshold-gain", "0",
                         "--max-compressed-ratio", "100",
-                        "--version", platform,
+                        "--version", outer_profile,
                         "--inode-bits", "32",
                         "--temp-folder", temp_dir,
                         "--cpu-count", str(cpu),
@@ -7281,7 +7289,7 @@ class App(tk.Tk):
                         "--threshold-gain", "0",
                         "--max-compressed-ratio", "100",
                         "--no-adjust-output-file-extension",
-                        "--version", platform,
+                        "--version", outer_profile,
                         "--inode-bits", "32",
                         *(["--require-game-files"] if platform == "PS5" else []),
                         "--temp-folder", temp_dir,
@@ -7408,6 +7416,17 @@ class App(tk.Tk):
                     )
                     self._qlog(self.tr("friendly_error_title"), "title")
                     self._qlog(self._friendly_failure_message(), "warn")
+                    play_error_once()
+                    continue
+
+                # Do not mark the operation successful or delete TEMP unless
+                # the outer header is mountable by ShadowMount+ (PS5 PFS v2).
+                try:
+                    version, size = validate_ffpfsc_outer_header(out_path)
+                    self._qlog(f"FFPFSC dış PFS doğrulandı: v{version}, blok {size}", "success")
+                except (OSError, ValueError) as header_error:
+                    self._qlog("FFPFSC kapsayıcı doğrulaması başarısız: "
+                               + str(header_error), "error")
                     play_error_once()
                     continue
 
