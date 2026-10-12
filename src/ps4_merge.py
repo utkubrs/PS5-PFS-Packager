@@ -113,7 +113,16 @@ def merge_ps4_folders(base: str, update: str, destination: str, title: str="", p
             progress(copied, total, done_files, total_files)
         return str(dst)
     try:
-        shutil.copytree(base,destination,copy_function=copy_with_progress)
+        if move_base:
+            # Only caller-owned extracted TEMP folders may use this fast rename.
+            base_bytes = sum(p.stat().st_size for p in base_files)
+            os.rename(base, destination)
+            copied += base_bytes
+            done_files += len(base_files)
+            if progress:
+                progress(copied, total, done_files, total_files)
+        else:
+            shutil.copytree(base,destination,copy_function=copy_with_progress)
         for root,dirs,files in os.walk(update):
             rel=Path(root).relative_to(update)
             target_dir=destination/rel
