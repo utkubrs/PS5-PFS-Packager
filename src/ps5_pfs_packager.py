@@ -6480,6 +6480,21 @@ class App(tk.Tk):
             if not base or not patch or not os.path.isdir(temp):
                 messagebox.showerror("PS4", mt("required"), parent=dlg)
                 return
+            # Preflight before closing the dialog: missing optional tools should
+            # be reported while the user's PKG and settings selections remain visible.
+            if any(os.path.isfile(value) and value.lower().endswith((".pkg", ".fpkg"))
+                   for value in (base, patch)):
+                if not find_pkg_extractor(
+                    app_dir=app_base_dir(),
+                    bundled_path=resource_path("tools/pkgextract.exe"),
+                ):
+                    messagebox.showerror(
+                        "PS4",
+                        "PKG çıkarıcısı bulunamadı. Tam Windows paketini kurun; "
+                        "tools/pkgextract.exe dosyasının bulunduğunu kontrol edin.",
+                        parent=dlg,
+                    )
+                    return
             output_dir = normalize_path(settings["output"].get().strip())
             output_name = settings["filename"].get().strip()
             auto_filename = not filename_manually_edited[0]
