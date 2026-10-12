@@ -37,7 +37,7 @@ Download the latest Windows package from the repository's **Releases** page.
 The release asset is named:
 
 ```text
-PS5-PFS-Packager-v2.31.0-Windows-x64.zip
+PS5-PFS-Packager-v2.32.0-Windows-x64.zip
 ```
 
 After downloading:
@@ -57,6 +57,18 @@ Open **PS4 Game + Update Merge** even while another game is converting. Add base
 own output, TEMP, PS4 title and compression options. View queued/completed/failed tasks,
 remove waiting entries, pause and resume scheduling. Original source folders are not edited.
 All PS4 merge and package jobs run serially to avoid competing for working files.
+
+## v2.32.0: PS4 update PARAM.SFO and version metadata
+
+PS4 base + update merging now takes the update's `sce_sys/param.sfo` (including its
+`APP_VER` field) into the staged combined game. The optional edited `TITLE` is applied
+to that copied file only. To keep the FFPFSC recognized as a standalone base game, a
+patch `CATEGORY=gp` is normalized to the base game's `CATEGORY=gd`. Source files and
+base-game artwork remain untouched. When no update is provided, the base SFO is retained.
+The conversion log reports the SFO source and selected `APP_VER`.
+
+This does not guarantee the console displays a particular version; check on a real
+PS5 after mounting and confirm the update's gameplay changes are present.
 
 ## Features
 
