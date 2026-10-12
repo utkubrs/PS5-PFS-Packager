@@ -3613,7 +3613,7 @@ from ps4_inputs import is_ps4_game_folder, detect_ps4_title_id, inspect_ps4_sour
 from ps4_merge import merge_ps4_folders, edit_sfo_title, sfo_fields
 from ps4_merge_i18n import merge_text
 from ps4_cleanup import cleanup_ps4_temp
-from ps4_shadowmount_metadata import prepare_ps4_shadowmount_metadata
+from ps4_shadowmount_metadata import prepare_ps4_shadowmount_metadata, prepare_existing_temp_merge
 
 class App(tk.Tk):
     def __init__(self):
@@ -7155,6 +7155,23 @@ class App(tk.Tk):
                     self._qlog("Invalid PS4 folder: requires eboot.bin and sce_sys/param.sfo", "error")
                     play_error_once()
                     continue
+                # v2.28 generated valid compressed images but older TEMP merges
+                # may still lack the ShadowMount+ PS4 JSON. Repair only a
+                # recognized program-owned ps4_merge_... folder; never edit
+                # arbitrary selected source game directories.
+                if platform == "PS4" and os.path.isdir(target):
+                    try:
+                        repaired = prepare_existing_temp_merge(
+                            target, temp_dir, remove_snd0=bool(self.ps4_remove_snd0_var.get()))
+                        if repaired:
+                            self._qlog(
+                                "PS4 ShadowMount+ metadata doğrulandı: "
+                                + repaired["title_id"] + ".exfat", "success")
+                    except Exception as metadata_error:
+                        self._qlog("PS4 metadata hazırlığı başarısız: "
+                                   + str(metadata_error), "error")
+                        play_error_once()
+                        continue
                 is_folder_source = os.path.isdir(target)
                 is_exfat_source = os.path.isfile(target) and target.lower().endswith((".exfat", ".ffpkg"))
 
