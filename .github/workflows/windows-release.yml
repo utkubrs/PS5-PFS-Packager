@@ -70,6 +70,39 @@ jobs:
           Write-Host $output
           if ($proc.ExitCode -ne 0 -or $output -match 'Error, load DLL') { throw "MkPFS subprocess smoke test failed with exit $($proc.ExitCode)" }
 
+      - name: Smoke test MkPFS pack folder (same path as GUI)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = (Resolve-Path 'dist/ps5_pfs_packager.dist/PS5-PFS-Packager.exe').Path
+          $work = Join-Path $env:RUNNER_TEMP 'ps4-pack-smoke'
+          $src = Join-Path $work 'game'
+          $output = Join-Path $work 'CUSA12381.ffpfsc'
+          New-Item -ItemType Directory -Force $src | Out-Null
+          [IO.File]::WriteAllBytes((Join-Path $src 'eboot.bin'), [byte[]](0..127))
+          [IO.File]::WriteAllText((Join-Path $src 'readme.txt'), 'Synthetic MkPFS smoke-test payload')
+          $env:TEMP = $work
+          $env:TMP = $work
+          $log = Join-Path $env:RUNNER_TEMP 'mkpfs-real-pack-out.txt'
+          $err = Join-Path $env:RUNNER_TEMP 'mkpfs-real-pack-err.txt'
+          $args = @('--internal-mkpfs', 'pack', 'folder',
+            '--compress', '--threshold-gain', '0', '--max-compressed-ratio', '100',
+            '--no-adjust-output-file-extension', '--version', 'PS4',
+            '--inode-bits', '32', '--temp-folder', $work,
+            '--cpu-count', '2', '--compression-level', '1',
+            '--block-size', 'auto', '--no-verify-structure', $src, $output)
+          $proc = Start-Process -FilePath $exe -ArgumentList $args -RedirectStandardOutput $log -RedirectStandardError $err -Wait -PassThru
+          $stdout = Get-Content $log -Raw -ErrorAction SilentlyContinue
+          $stderr = Get-Content $err -Raw -ErrorAction SilentlyContinue
+          Write-Host $stdout
+          Write-Host $stderr
+          if ($proc.ExitCode -ne 0 -or ($stdout + $stderr) -match 'Error, load DLL') {
+            throw "Actual MkPFS pack folder smoke test failed: $($proc.ExitCode)"
+          }
+          if (!(Test-Path $output) -or (Get-Item $output).Length -lt 1024) {
+            throw 'MkPFS did not create a valid-sized FFPFSC output'
+          }
+
       - name: Package executable and checksums
         shell: pwsh
         run: |
