@@ -6473,6 +6473,8 @@ class App(tk.Tk):
                 return
             output_dir = normalize_path(settings["output"].get().strip())
             output_name = settings["filename"].get().strip()
+            auto_filename = output_name == suggested_filename[0]
+            auto_title = title == suggested_title[0]
             if not output_name or not output_name.lower().endswith(".ffpfsc"):
                 messagebox.showerror("PS4", mt("filename_error"), parent=dlg)
                 return
@@ -6498,13 +6500,13 @@ class App(tk.Tk):
                 try:
                     import uuid
                     def stage(value):
-                        if os.path.isfile(value) and value.lower().endswith(".pkg"):
-                            return extract_pkg(value, temp, lambda m: self._qlog(m, "info"))
+                        if os.path.isfile(value) and value.lower().endswith((".pkg", ".fpkg")):
+                            return extract_pkg(value, temp, lambda m: self._qlog(m, "info")), True
                         if os.path.isdir(value):
-                            return value
+                            return value, False
                         raise ValueError(mt("invalid") + value)
-                    game_dir = stage(base)
-                    update_dir = stage(patch)
+                    game_dir, game_is_temporary = stage(base)
+                    update_dir, update_is_temporary = stage(patch)
                     dst = os.path.join(temp, "ps4_merge_" + uuid.uuid4().hex[:10])
                     # Use actual PARAM.SFO title when the dialog still shows the
                     # automatic filename suggestion; explicit user edits take precedence.
