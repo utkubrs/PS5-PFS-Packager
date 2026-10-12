@@ -20,6 +20,12 @@ Close:
 
 Then try **Save / Close** again.
 
+## Windows Error 126 / "Error, load DLL." during MkPFS packaging
+
+If PKG extraction and the PS4 merge succeeded but the log then says `Error, load DLL. ([Error 126] ...)`, the Windows Nuitka onefile runtime could not load its child process. This is not evidence of a broken game, SFO or FFPFSC input.
+
+Use v2.26.0 or newer, which disables Nuitka onefile DLL mode and keeps runtime bootstrap temp files on a Windows local directory. Game extraction/merge and MkPFS's large files still use the user-selected TEMP. Keep the already merged `ps4_merge_...` directory and retry only the conversion; do not repeat package extraction unless the merge folder is missing. If Error 126 persists, Windows security software, missing system DLLs and file permissions may need diagnosis.
+
 ## Not enough temp space
 
 Opening FFPFSC requires space for the wrapped raw exFAT image. The required size can be significantly larger than the compressed FFPFSC.
