@@ -146,7 +146,14 @@ def extract_pkg(source: str, temp_dir: str, log=None,
     base.mkdir(parents=True,exist_ok=True)
     folder=base/(re.sub(r"[^A-Za-z0-9_.-]","_",source.stem)[:80])
     if folder.exists():
-        raise FileExistsError(f"Extraction target exists: {folder}. Remove it or choose a different TEMP directory.")
+        # A previous failed run can leave this directory behind. Never
+        # overwrite, delete, or treat an incomplete extraction as successful.
+        import uuid
+        stem=folder.name[:65]
+        while folder.exists():
+            folder=base/(stem+"_"+uuid.uuid4().hex[:10])
+        if log:
+            log("Existing extraction preserved; using new TEMP folder: "+str(folder))
     if log:log(f"Extracting {source.name} to {folder}")
     flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
     startup = None
