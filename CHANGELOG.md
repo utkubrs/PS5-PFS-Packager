@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.31.0
+
+- Added live PS4 FIFO job queue with pause/resume and removal of waiting entries.
+- PS4 update is optional: a base-game-only source can be packaged through the same pipeline.
+- Per-job output, TEMP, options and title are captured when enqueued.
+- Added output collision checks and regression tests for no-update games.
+
 ## 2.13.0
 
 - Added ordered tuning row: Profile, Block, CPU, Compression
