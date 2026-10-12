@@ -110,3 +110,19 @@ def prepare_ps4_shadowmount_metadata(merged_folder: str, remove_snd0: bool = Fal
             sound.unlink()
             removed = True
     return {"title_id": title_id, "title": title, "param_json": str(json_path), "snd0_removed": removed}
+
+
+def prepare_existing_temp_merge(source: str, selected_temp: str, remove_snd0: bool = False) -> dict | None:
+    """Repair an old user-selected merge staging directory only if app-owned.
+
+    Never write into original game directories, even when they happen to have
+    a similar name; the merge tree must be an immediate child of selected TEMP.
+    """
+    root = Path(source)
+    temp = Path(selected_temp).resolve()
+    if root.is_symlink() or not root.is_dir():
+        return None
+    root = root.resolve()
+    if root.parent != temp or not re.fullmatch(r"ps4_merge_[0-9a-f]{10,32}", root.name):
+        return None
+    return prepare_ps4_shadowmount_metadata(str(root), remove_snd0=remove_snd0)
