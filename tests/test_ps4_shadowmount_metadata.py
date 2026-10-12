@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from ps4_shadowmount_metadata import prepare_ps4_shadowmount_metadata
+from ps4_shadowmount_metadata import prepare_ps4_shadowmount_metadata, prepare_existing_temp_merge
 from test_ps4_merge import make_sfo
 
 
@@ -60,6 +60,30 @@ class PS4ShadowMountMetadataTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "CUSA"):
                 prepare_ps4_shadowmount_metadata(str(root), remove_snd0=True)
             self.assertTrue((root / "sce_sys" / "snd0.at9").exists())
+
+
+    def test_repack_old_temp_merge_regenerates_cusa_metadata(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            temp = Path(tmp) / "temp"
+            temp.mkdir()
+            base, staged = self.make_game(temp)
+            old = temp / "ps4_merge_eccb0f3a0b"
+            staged.rename(old)
+            self.assertFalse((old / "sce_sys" / "param.json").exists())
+            fixed = prepare_existing_temp_merge(str(old), str(temp), False)
+            self.assertEqual(fixed["title_id"], "CUSA12381")
+            data = json.loads((old / "sce_sys" / "param.json").read_text("utf-8"))
+            self.assertEqual(data["titleId"], "CUSA12381")
+            self.assertTrue((old / "sce_sys" / "snd0.at9").exists())
+
+    def test_non_owned_folder_is_never_modified(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            temp = Path(tmp) / "temp"
+            temp.mkdir()
+            original, stage = self.make_game(Path(tmp))
+            self.assertIsNone(prepare_existing_temp_merge(str(original), str(temp), True))
+            self.assertTrue((original / "sce_sys" / "snd0.at9").exists())
+            self.assertFalse((original / "sce_sys" / "param.json").exists())
 
 
 if __name__ == "__main__":
