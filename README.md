@@ -37,7 +37,7 @@ Download the latest Windows package from the repository's **Releases** page.
 The release asset is named:
 
 ```text
-PS5-PFS-Packager-v2.29.0-Windows-x64.zip
+PS5-PFS-Packager-v2.30.0-Windows-x64.zip
 ```
 
 After downloading:
