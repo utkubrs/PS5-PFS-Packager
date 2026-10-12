@@ -37,7 +37,7 @@ Download the latest Windows package from the repository's **Releases** page.
 The release asset is named:
 
 ```text
-PS5-PFS-Packager-v2.30.0-Windows-x64.zip
+PS5-PFS-Packager-v2.31.0-Windows-x64.zip
 ```
 
 After downloading:
@@ -49,6 +49,14 @@ After downloading:
 5. Start the conversion.
 
 The executable is currently unsigned, so Windows SmartScreen may display a warning. Verify the SHA-256 checksum published with each release.
+
+## v2.31.0: live PS4 job queue and base-game-only packaging
+
+Open **PS4 Game + Update Merge** even while another game is converting. Add base games alone
+(with no update), or base + update pairs, to a shared FIFO queue. Each job remembers its
+own output, TEMP, PS4 title and compression options. View queued/completed/failed tasks,
+remove waiting entries, pause and resume scheduling. Original source folders are not edited.
+All PS4 merge and package jobs run serially to avoid competing for working files.
 
 ## Features
 
