@@ -3612,6 +3612,7 @@ from upgrade_features import inspect_game, validate_preflight, recommended_block
 from ps4_inputs import is_ps4_game_folder, detect_ps4_title_id, inspect_ps4_source, extract_pkg, find_pkg_extractor
 from ps4_merge import merge_ps4_folders, edit_sfo_title, sfo_fields
 from ps4_merge_i18n import merge_text
+from ps4_cleanup import cleanup_ps4_temp
 
 class App(tk.Tk):
     def __init__(self):
@@ -3643,6 +3644,7 @@ class App(tk.Tk):
         self.mount_action = ""
         self._last_dat_progress_text = ""
         self._last_multi_preview_key = ""
+        self._ps4_cleanup_plan = None  # transient, only for this one-click conversion
 
         self.source_var = tk.StringVar()
         self.output_dir_var = tk.StringVar(value=normalize_path(os.path.join(Path.home(), "Downloads")))
@@ -6640,6 +6642,12 @@ class App(tk.Tk):
                         self._ps4_merge_busy = False
                         self._qprogress(100)
                         self._qstatus(mt("done"))
+                        self._ps4_cleanup_plan = {
+                            "merge": result["folder"],
+                            "staged": ([game_dir] if game_is_temporary else [])
+                                      + ([update_dir] if update_is_temporary else []),
+                            "temp": temp,
+                        }
                         self._log("PS4 birleştirildi: " + result["folder"], "success")
                         self._log("FFPFSC otomatik başlatılıyor: " + final_output_name, "info")
                         self._retain_ps4_merge_log = True
@@ -7467,7 +7475,7 @@ class App(tk.Tk):
 
                 completed_count += 1
 
-                if delete_source:
+                if delete_source and not getattr(self, "_ps4_cleanup_plan", None):
                     self._qphase(self.tr("delete_source_phase"))
                     safe_delete_game_folder(target, out_dir, temp_dir, self._qlog, self.tr, self.tr_format)
 
@@ -7479,6 +7487,19 @@ class App(tk.Tk):
 
             all_successful = bool(targets) and completed_count == len(targets) and not self.cancel_requested
             if all_successful:
+                plan = getattr(self, "_ps4_cleanup_plan", None)
+                if plan and len(targets) == 1 and normalize_path(targets[0]) == normalize_path(plan["merge"]):
+                    try:
+                        # MkPFS returned success; also require the output file to
+                        # exist and be nonempty before touching TEMP.
+                        expected_output = os.path.join(out_dir, safe_filename(self.file_name_var.get().strip()))
+                        if not expected_output.lower().endswith(".ffpfsc"):
+                            expected_output += ".ffpfsc"
+                        if not os.path.isfile(expected_output) or os.path.getsize(expected_output) < 1024:
+                            raise RuntimeError("FFPFSC output missing or too small")
+                        cleanup_ps4_temp(plan["merge"], plan["staged"], plan["temp"], self._qlog)
+                    except Exception as cleanup_exc:
+                        self._qlog("TEMP korunuyor; temizleme atlandı: " + str(cleanup_exc), "warn")
                 self.play_completion_sound()
                 if self.shutdown_var.get():
                     self.schedule_pc_shutdown()
@@ -7489,6 +7510,9 @@ class App(tk.Tk):
             except Exception:
                 pass
         finally:
+            # Never delete TEMP on a failed/aborted conversion. A later manual
+            # run must not inherit ownership of a previous session's folders.
+            self._ps4_cleanup_plan = None
             self._stop_operation_timer(clear=False)
             self.queue.put(("done",))
 
