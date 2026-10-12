@@ -47,6 +47,7 @@ if exist "assets\completion.mp3" if exist "assets\error.mp3" (
 "%PY%" -m nuitka ^
   --mode=onefile ^
   --onefile-no-compression ^
+  --onefile-no-dll ^
   --mingw64 ^
   --assume-yes-for-downloads ^
   --enable-plugin=tk-inter ^
