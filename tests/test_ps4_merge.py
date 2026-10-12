@@ -31,6 +31,40 @@ class PS4MergeTest(unittest.TestCase):
             self.assertEqual(fields["TITLE"],"Blair Witch (TR)")
             self.assertEqual(fields["TITLE_ID"],"CUSA12345")
             self.assertTrue(fields["CONTENT_ID"].startswith("UP0000-"))
+    def test_base_only_without_update_preserves_source_and_title(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp) / "base"
+            merged = Path(tmp) / "merged"
+            (base / "sce_sys").mkdir(parents=True)
+            make_sfo(base / "sce_sys" / "param.sfo", title="My Game")
+            (base / "eboot.bin").write_bytes(b"GAME")
+            (base / "sce_sys" / "icon0.png").write_bytes(b"ORIGINAL")
+            (base / "data.bin").write_bytes(b"DATA")
+            samples = []
+            result = merge_ps4_folders(
+                str(base), None, str(merged), "My Game (TR)",
+                progress=lambda *data: samples.append(data),
+            )
+            self.assertEqual(result["title_id"], "CUSA12345")
+            self.assertEqual((base / "data.bin").read_bytes(), b"DATA")
+            self.assertEqual(sfo_fields(str(base / "sce_sys" / "param.sfo"))["TITLE"], "My Game")
+            self.assertEqual((merged / "data.bin").read_bytes(), b"DATA")
+            self.assertEqual((merged / "sce_sys" / "icon0.png").read_bytes(), b"ORIGINAL")
+            self.assertEqual(sfo_fields(str(merged / "sce_sys" / "param.sfo"))["TITLE"], "My Game (TR)")
+            self.assertTrue(samples)
+            self.assertEqual(samples[-1][0], samples[-1][1])
+
+    def test_base_only_moves_only_caller_owned_temp_extraction(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp) / "staged_base"
+            destination = Path(tmp) / "staged_merged"
+            (base / "sce_sys").mkdir(parents=True)
+            make_sfo(base / "sce_sys" / "param.sfo")
+            (base / "eboot.bin").write_bytes(b"EXEC")
+            merge_ps4_folders(str(base), "", str(destination), move_base=True)
+            self.assertFalse(base.exists())
+            self.assertEqual((destination / "eboot.bin").read_bytes(), b"EXEC")
+
     def test_update_keeps_base_game_artwork(self):
         with tempfile.TemporaryDirectory() as tmp:
             base=Path(tmp)/"base";update=Path(tmp)/"update";merged=Path(tmp)/"merged"
