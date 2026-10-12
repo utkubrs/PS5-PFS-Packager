@@ -26,7 +26,7 @@ Bu proje MkPFS 1.1.0 tabanlıdır ve PS5/PS4 platform seçimi, sıkıştırma pr
 
 Windows 7 / 8 / 8.1 desteklenmez.
 
-## Hızlı kullanım
+## PS4 oyun + update tek tuşla FFPFSC\n\n1. **PS4 Oyun + Update Birleştir** düğmesini açın.\n2. Ana oyun ve update için PKG veya çıkarılmış klasör seçin. Oyun adı ve CUSA kodlu çıktı adı otomatik önerilir; ikisini de elle değiştirebilirsiniz.\n3. Çıkış ve TEMP klasörünü seçip **Birleştir ve FFPFSC Oluştur** düğmesine basın.\n4. PKG çıkarma, birleşim ve FFPFSC paketleme otomatik tamamlanır.\n\nPKG'den çıkarılan geçici dosyalar gereksiz kopyalanmaz. Doğrudan seçilen orijinal klasörler değiştirilmez.\n\n## Hızlı kullanım
 
 1. Programı çalıştırın.
 2. Kaynak oyun klasörünü veya `.exfat` dosyasını seçin.
