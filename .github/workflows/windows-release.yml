@@ -1,5 +1,5 @@
 name: Build and publish Windows package
-# v2.31.0 release: integrated output/TEMP/filename settings and 15-language test build.
+# v2.32.0 release: integrated output/TEMP/filename settings and 15-language test build.
 
 on:
   pull_request:
@@ -185,7 +185,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $version = '2.31.0'
+          $version = '2.32.0'
           $name = "PS5-PFS-Packager-v$version-Windows-x64"
           New-Item -ItemType Directory -Force -Path release, "release/$name" | Out-Null
           $dist = 'dist/ps5_pfs_packager.dist'
@@ -208,7 +208,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $name = 'PS5-PFS-Packager-v2.31.0-Windows-x64'
+          $name = 'PS5-PFS-Packager-v2.32.0-Windows-x64'
           $zip = Join-Path 'release' ($name + '.zip')
           $dst = Join-Path $env:RUNNER_TEMP 'Installed Release With Spaces'
           Expand-Archive $zip -DestinationPath $dst -Force
@@ -228,7 +228,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: PS5-PFS-Packager-v2.31.0-Windows-x64
+          name: PS5-PFS-Packager-v2.32.0-Windows-x64
           path: |
             release/*.zip
             release/SHA256SUMS.txt
@@ -241,11 +241,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference = 'Stop'
-          $tag = 'v2.31.0'
+          $tag = 'v2.32.0'
           gh release view $tag --repo "$env:GITHUB_REPOSITORY" *> $null
           if ($LASTEXITCODE -ne 0) {
             gh release create $tag --repo "$env:GITHUB_REPOSITORY" --target "$env:GITHUB_SHA" --title "PS5 PFS Packager $tag" --notes "Windows x64 package built from the repository with MkPFS 1.1.0. See README for instructions."
             if ($LASTEXITCODE -ne 0) { throw "Release creation failed" }
           }
-          gh release upload $tag "release/PS5-PFS-Packager-v2.31.0-Windows-x64.zip" "release/SHA256SUMS.txt" --clobber --repo "$env:GITHUB_REPOSITORY"
+          gh release upload $tag "release/PS5-PFS-Packager-v2.32.0-Windows-x64.zip" "release/SHA256SUMS.txt" --clobber --repo "$env:GITHUB_REPOSITORY"
           if ($LASTEXITCODE -ne 0) { throw "Release upload failed" }

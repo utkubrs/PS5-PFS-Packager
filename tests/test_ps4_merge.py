@@ -6,8 +6,8 @@ import sys
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/"src"))
 from ps4_merge import merge_ps4_folders, edit_sfo_title, sfo_fields
 
-def make_sfo(path, title="Base Game", title_id="CUSA12345", category="gd"):
-    values={"TITLE":title,"TITLE_ID":title_id,"CONTENT_ID":"UP0000-CUSA12345_00-EXAMPLE000000000","CATEGORY":category}
+def make_sfo(path, title="Base Game", title_id="CUSA12345", category="gd", app_ver="1.00"):
+    values={"TITLE":title,"TITLE_ID":title_id,"CONTENT_ID":"UP0000-CUSA12345_00-EXAMPLE000000000","CATEGORY":category,"APP_VER":app_ver}
     keys=bytearray();data=bytearray();entries=[]
     for name,value in values.items():
         keyoff=len(keys);keys+=name.encode()+b"\0"
@@ -72,7 +72,9 @@ class PS4MergeTest(unittest.TestCase):
                 (p/"sce_sys").mkdir(parents=True)
                 if p == base:
                     (p/"eboot.bin").write_text(p.name)
-                make_sfo(p/"sce_sys"/"param.sfo",category="gp" if p==update else "gd")
+                make_sfo(p/"sce_sys"/"param.sfo",category="gp" if p==update else "gd",
+                         app_ver="1.01" if p==update else "1.00",
+                         title="Updated Game" if p==update else "Base Game")
             (base/"sce_sys"/"icon0.png").write_text("ORIGINAL")
             (update/"sce_sys"/"icon0.png").write_text("UPDATE")
             (update/"new_data.bin").write_text("PATCH")
@@ -83,13 +85,19 @@ class PS4MergeTest(unittest.TestCase):
             self.assertEqual(calls[-1][2],calls[-1][3])
             self.assertEqual((merged/"sce_sys"/"icon0.png").read_text(),"ORIGINAL")
             self.assertEqual((merged/"new_data.bin").read_text(),"PATCH")
-            self.assertEqual(sfo_fields(str(merged/"sce_sys"/"param.sfo"))["TITLE"],"Merged TR")
+            merged_fields = sfo_fields(str(merged/"sce_sys"/"param.sfo"))
+            self.assertEqual(merged_fields["TITLE"], "Merged TR")
+            self.assertEqual(merged_fields["APP_VER"], "1.01")
+            self.assertEqual(merged_fields["CATEGORY"], "gd")
+            self.assertEqual(sfo_fields(str(base/"sce_sys"/"param.sfo"))["APP_VER"], "1.00")
+            self.assertEqual(sfo_fields(str(update/"sce_sys"/"param.sfo"))["CATEGORY"], "gp")
     def test_fast_merge_moves_only_extracted_inputs(self):
         with tempfile.TemporaryDirectory() as tmp:
             temp=Path(tmp); base=temp/"extracted_game"; update=temp/"extracted_patch"; dst=temp/"merged"
             for path in (base,update):
                 (path/"sce_sys").mkdir(parents=True)
-                make_sfo(path/"sce_sys"/"param.sfo",category="gp" if path==update else "gd")
+                make_sfo(path/"sce_sys"/"param.sfo",category="gp" if path==update else "gd",
+                         app_ver="1.01" if path==update else "1.00")
             (base/"eboot.bin").write_bytes(b"GAME")
             (base/"sce_sys"/"icon0.png").write_bytes(b"BASE ICON")
             (base/"data.bin").write_bytes(b"ORIGINAL")
@@ -106,9 +114,45 @@ class PS4MergeTest(unittest.TestCase):
             self.assertEqual((dst/"new.bin").read_bytes(),b"NEW")
             self.assertEqual((dst/"sce_sys"/"icon0.png").read_bytes(),b"BASE ICON")
             self.assertEqual(sfo_fields(str(dst/"sce_sys"/"param.sfo"))["CATEGORY"],"gd")
+            self.assertEqual(sfo_fields(str(dst/"sce_sys"/"param.sfo"))["APP_VER"],"1.01")
+            self.assertEqual(result["sfo_source"],"update")
+            self.assertEqual(result["app_ver"],"1.01")
             self.assertTrue(values)
             self.assertEqual(values[-1][0:2],(values[-1][1],values[-1][1]))
             self.assertEqual(values[-1][2:4],(values[-1][3],values[-1][3]))
+
+    def test_update_sfo_used_without_title_override(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp) / "base"
+            update = Path(tmp) / "update"
+            merged = Path(tmp) / "merged"
+            for p in (base, update):
+                (p / "sce_sys").mkdir(parents=True)
+            (base / "eboot.bin").write_bytes(b"EXECUTABLE")
+            make_sfo(base / "sce_sys" / "param.sfo", title="Old Name",
+                     category="gd", app_ver="1.00")
+            make_sfo(update / "sce_sys" / "param.sfo", title="Updated Name",
+                     category="gp", app_ver="1.05")
+            result = merge_ps4_folders(str(base), str(update), str(merged))
+            fields = sfo_fields(str(merged / "sce_sys" / "param.sfo"))
+            self.assertEqual(fields["TITLE"], "Updated Name")
+            self.assertEqual(fields["APP_VER"], "1.05")
+            self.assertEqual(fields["CATEGORY"], "gd")
+            self.assertEqual(result["sfo_source"], "update")
+
+    def test_no_update_sfo_preserves_base_version(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp) / "base"
+            merged = Path(tmp) / "merged"
+            (base / "sce_sys").mkdir(parents=True)
+            (base / "eboot.bin").write_bytes(b"EXECUTABLE")
+            make_sfo(base / "sce_sys" / "param.sfo",
+                     category="gd", app_ver="1.00")
+            result = merge_ps4_folders(str(base), None, str(merged))
+            fields = sfo_fields(str(merged / "sce_sys" / "param.sfo"))
+            self.assertEqual(fields["APP_VER"], "1.00")
+            self.assertEqual(fields["CATEGORY"], "gd")
+            self.assertEqual(result["sfo_source"], "base")
 
     def test_mismatched_patch_does_not_move_inputs(self):
         with tempfile.TemporaryDirectory() as tmp:
