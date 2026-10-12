@@ -7435,7 +7435,7 @@ class App(tk.Tk):
                 if pending_cleanup and not batch:
                     expected = normalize_path(os.path.join(
                         pending_cleanup["output_dir"], pending_cleanup["filename"]))
-                    if (normalize_path(out_path) == expected and normalize_path(target) == normalize_path(pending_cleanup["merged"]):
+                    if (normalize_path(out_path) == expected and normalize_path(target) == normalize_path(pending_cleanup["merged"])):
                         try:
                             cleanup_ps4_merge(
                                 pending_cleanup["temp"], pending_cleanup["merged"],
