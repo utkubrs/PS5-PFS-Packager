@@ -6538,16 +6538,22 @@ class App(tk.Tk):
                     # If the PKG header didn't advertise CUSA, resolve it after extraction.
                     final_output_name = ((merged_id + ".ffpfsc") if auto_filename and merged_id else output_name)
                     def done():
+                        # Automatically continue into the existing single-game packer.
+                        # UI changes and Tk worker startup must happen on the Tk thread.
+                        if self.batch_var.get():
+                            self.batch_var.set(False)
+                            self.on_mode_changed()
+                        self.platform_var.set("PS4")
                         self.source_var.set(result["folder"])
-                        # Source change performs auto-naming; restore the explicitly
-                        # selected FFPFSC output name from the merge dialog.
-                        self.file_name_var.set(output_name)
+                        self.file_name_var.set(final_output_name)
                         self._ps4_merge_busy = False
                         self._qprogress(100)
                         self._qstatus(mt("done"))
-                        self._log("PS4 birleşimi hazır: " + result["folder"], "success")
+                        self._log("PS4 birleştirildi: " + result["folder"], "success")
+                        self._log("FFPFSC otomatik başlatılıyor: " + final_output_name, "info")
+                        self._retain_ps4_merge_log = True
                         self._update_start_button_state()
-                        messagebox.showinfo("PS4", mt("done"))
+                        self.after_idle(self.start)
                     self.after(0, done)
                 except Exception as exc:
                     error = str(exc)
@@ -6884,7 +6890,9 @@ class App(tk.Tk):
         self.status_var.set(self.tr("status_running"))
         self._refresh_progress_status_label()
         self.phase_var.set(self.tr("phase_preparing"))
-        self.log_text.delete("1.0", "end")
+        if not getattr(self, "_retain_ps4_merge_log", False):
+            self.log_text.delete("1.0", "end")
+        self._retain_ps4_merge_log = False
 
         self._set_running(True)
         self.worker_thread = threading.Thread(target=self._worker, daemon=True)
