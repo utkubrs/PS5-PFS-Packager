@@ -62,7 +62,7 @@ def detect_logical_cpu_count() -> int:
     except Exception:
         return 1
 
-APP_VERSION = "2.31"
+APP_VERSION = "2.32"
 APP_TITLE = "PS5 PFS Paketleyici"
 
 MKPFS_RELEASES_URL = "https://github.com/PSBrew/MkPFS/releases"
@@ -6607,6 +6607,12 @@ class App(tk.Tk):
                 progress=progress,
                 move_base=game_is_temporary,
                 move_update=update_is_temporary,
+            )
+            self._qlog(
+                "PS4 PARAM.SFO kaynağı: "
+                + ("update" if result["sfo_source"] == "update" else "ana oyun")
+                + " | APP_VER: " + (result["app_ver"] or "belirtilmemiş"),
+                "success",
             )
             metadata = prepare_ps4_shadowmount_metadata(
                 result["folder"], remove_snd0=job["remove_snd0"],
