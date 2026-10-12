@@ -3609,7 +3609,7 @@ def run_internal_mkpfs(args: list[str]) -> int:
 
 
 from upgrade_features import inspect_game, validate_preflight, recommended_block_size
-from ps4_inputs import is_ps4_game_folder, detect_ps4_title_id, extract_pkg
+from ps4_inputs import is_ps4_game_folder, detect_ps4_title_id, inspect_ps4_source, extract_pkg
 from ps4_merge import merge_ps4_folders, edit_sfo_title, sfo_fields
 from ps4_merge_i18n import merge_text
 
@@ -6418,13 +6418,6 @@ class App(tk.Tk):
                 tk.Button(frame, text=mt("folder"), command=lambda v=value:
                           v.set(filedialog.askdirectory(parent=dlg) or v.get())).pack(side="left")
             entries.append(value)
-            if len(entries) == 1:
-                def infer_title(*_):
-                    name = os.path.splitext(os.path.basename(value.get().strip()))[0]
-                    # Keep user-modified titles; only auto-fill if still empty.
-                    if len(entries) >= 3 and not entries[2].get().strip():
-                        entries[2].set(name.replace("_", " ").replace("-", " "))
-                value.trace_add("write", infer_title)
         # Values are initialized from the main screen and synchronized when accepted.
         settings = {
             "output": tk.StringVar(value=self.output_dir_var.get()),
