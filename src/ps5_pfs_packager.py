@@ -62,7 +62,7 @@ def detect_logical_cpu_count() -> int:
     except Exception:
         return 1
 
-APP_VERSION = "2.30"
+APP_VERSION = "2.31"
 APP_TITLE = "PS5 PFS Paketleyici"
 
 MKPFS_RELEASES_URL = "https://github.com/PSBrew/MkPFS/releases"
