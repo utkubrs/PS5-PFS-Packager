@@ -52,6 +52,43 @@ def repair_ps4_npbind_footer(root: Path) -> bool:
     return True
 
 
+
+PFS_MAGIC = 20130315
+PFS_VERSION_PS5 = 2
+
+
+def ffpfsc_outer_pfs_profile(game_platform: str) -> str:
+    """FFPFSC mounts on PS5, so its OUTER PFS profile is PS5 for PS4 games too.
+
+    The game executable and PARAM.SFO stay PS4; only outer PFS version differs.
+    Previously choosing PS4 wrote PFS version 1 and ShadowMount+ refused it.
+    """
+    if game_platform not in ("PS4", "PS5"):
+        raise ValueError("Unknown platform")
+    return "PS5"
+
+
+def validate_ffpfsc_outer_header(filename: str) -> tuple[int, int]:
+    """Require mountable PS5-profile unsigned outer container before success.
+
+    A successful MkPFS exit code alone is insufficient to accept PS4 FFPFSC.
+    """
+    with open(filename, "rb") as source:
+        header = source.read(0x50)
+    if len(header) < 0x50:
+        raise ValueError("FFPFSC header truncated")
+    pfs_version, magic = struct.unpack_from("<qq", header, 0)
+    block_size = struct.unpack_from("<I", header, 0x20)[0]
+    mode = struct.unpack_from("<H", header, 0x1C)[0]
+    if pfs_version != PFS_VERSION_PS5 or magic != PFS_MAGIC:
+        raise ValueError(f"FFPFSC outer PFS must be PS5 version 2; received version {pfs_version}")
+    if mode & ~0x08:
+        raise ValueError("FFPFSC outer PFS must be unsigned and unencrypted")
+    if not (4096 <= block_size <= 1 << 20 and block_size & (block_size - 1) == 0):
+        raise ValueError(f"Invalid FFPFSC PFS block size: {block_size}")
+    return pfs_version, block_size
+
+
 def read_ps4_sfo_fields(path: Path) -> dict:
     data = path.read_bytes()
     fields: dict = {}
