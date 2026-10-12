@@ -56,6 +56,7 @@ if exist "assets\completion.mp3" if exist "assets\error.mp3" (
   --windows-uac-admin ^
   --windows-icon-from-ico=assets\appicon.ico ^
   --include-data-files=assets\appicon.ico=appicon.ico ^
+  --include-data-files=tools\pkgextract.exe=tools/pkgextract.exe ^
   --output-dir=dist ^
   --output-filename=PS5-PFS-Packager.exe ^
   --include-package=mkpfs ^
