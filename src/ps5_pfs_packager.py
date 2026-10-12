@@ -6449,8 +6449,8 @@ class App(tk.Tk):
         tk.Label(header, text=mt("merge_title"),
                  bg=palette["bg"], fg=palette["text"],
                  font=("Segoe UI", 19, "bold"), anchor="w").pack(anchor="w")
-        tk.Label(header, text=("Ana oyun ve güncellemeyi tek tuşla FFPFSC dosyasına dönüştür."
-                               if is_tr else "Convert a game and its update into FFPFSC in one step."),
+        tk.Label(header, text=("Update olmadan da çalışır. Oyunları beklemeden kuyruğa ekleyebilirsiniz."
+                               if is_tr else "Update is optional. Add games while another conversion runs."),
                  bg=palette["bg"], fg=palette["muted"],
                  font=("Segoe UI", 10), anchor="w").pack(anchor="w", pady=(5, 0))
         tk.Frame(dlg, bg="#304257", height=1).pack(fill="x", padx=28)
@@ -6498,7 +6498,7 @@ class App(tk.Tk):
                 selected = filedialog.askdirectory(parent=dlg)
                 if selected:
                     v.set(selected)
-            entry_row(caption, value, index + 1,
+            entry_row(caption + ((" (isteğe bağlı)" if is_tr else " (optional)") if index == 1 else ""), value, index + 1,
                       [(mt("pkg"), browse_pkg), (mt("folder"), browse_folder)])
             entries.append(value)
 
@@ -6564,37 +6564,30 @@ class App(tk.Tk):
         tk.Label(footer, textvariable=status, bg=palette["bg"],
                  fg="#86efac", font=("Segoe UI", 10, "bold")).pack(pady=(0, 9))
         def merge():
-            if getattr(self, "_ps4_merge_busy", False):
-                return
-            if str(self.platform_var.get()).upper() != "PS4":
-                messagebox.showerror("PS4", mt("platform_error"), parent=dlg)
-                return
             base, patch, title = (v.get().strip() for v in entries)
             temp = normalize_path(settings["temp"].get().strip())
-            if not base or not patch or not os.path.isdir(temp):
+            if not base or not os.path.exists(base) or (patch and not os.path.exists(patch)) or not temp:
                 messagebox.showerror("PS4", mt("required"), parent=dlg)
                 return
-            # Preflight before closing the dialog: missing optional tools should
-            # be reported while the user's PKG and settings selections remain visible.
+            if patch and os.path.normcase(normalize_path(base)) == os.path.normcase(normalize_path(patch)):
+                messagebox.showerror("PS4", "Ana oyun ve update aynı kaynak olamaz.", parent=dlg)
+                return
             if any(os.path.isfile(value) and value.lower().endswith((".pkg", ".fpkg"))
-                   for value in (base, patch)):
+                   for value in (base, patch) if value):
                 if not find_pkg_extractor(
-                    app_dir=app_base_dir(),
-                    bundled_path=resource_path("tools/pkgextract.exe"),
+                    app_dir=app_base_dir(), bundled_path=resource_path("tools/pkgextract.exe")
                 ):
                     messagebox.showerror(
-                        "PS4",
-                        "PKG çıkarıcısı bulunamadı. Tam Windows paketini kurun; "
-                        "tools/pkgextract.exe dosyasının bulunduğunu kontrol edin.",
+                        "PS4", "PKG çıkarıcısı bulunamadı. tools/pkgextract.exe dosyasını kontrol edin.",
                         parent=dlg,
                     )
                     return
             output_dir = normalize_path(settings["output"].get().strip())
             output_name = settings["filename"].get().strip()
-            auto_filename = not filename_manually_edited[0]
-            auto_title = title == suggested_title[0]
-            remove_snd0 = bool(self.ps4_remove_snd0_var.get())
             if not output_name or not output_name.lower().endswith(".ffpfsc"):
+                messagebox.showerror("PS4", mt("filename_error"), parent=dlg)
+                return
+            if os.path.basename(output_name) != output_name or output_name in (".", ".."):
                 messagebox.showerror("PS4", mt("filename_error"), parent=dlg)
                 return
             try:
@@ -6605,103 +6598,26 @@ class App(tk.Tk):
             except OSError:
                 messagebox.showerror("PS4", mt("directory_error"), parent=dlg)
                 return
-            self.output_dir_var.set(output_dir)
-            self.file_name_var.set(output_name)
-            self.temp_dir_var.set(temp)
-            self._ps4_merge_busy = True
+            job = {
+                "base": normalize_path(base), "patch": normalize_path(patch) if patch else "",
+                "title": title, "auto_title": title == suggested_title[0],
+                "output": output_dir, "filename": output_name,
+                "auto_filename": not filename_manually_edited[0],
+                "temp": temp, "remove_snd0": bool(self.ps4_remove_snd0_var.get()),
+                "cpu": self.cpu_var.get(), "compression": self.compression_level_var.get(),
+                "block": self.block_size_var.get(), "preset": self.preset_var.get(),
+                "extra_verify": self.extra_verify_var.get(), "fakelib": self.fakelib_var.get(),
+                "shutdown": self.shutdown_var.get(),
+            }
+            if not self._enqueue_ps4_job(job):
+                messagebox.showerror(
+                    "PS4", "Bu FFPFSC çıkışı zaten kuyrukta. Farklı bir dosya adı seçin.",
+                    parent=dlg,
+                )
+                return
             dlg.destroy()
-            self._qphase(mt("merge_title"))
-            self._qstatus(mt("preparing"))
-            self._qprogress(0)
-            self._qlog(mt("started"), "title")
-            self._update_start_button_state()
-            def worker():
-                try:
-                    import uuid
-                    def stage(value):
-                        if os.path.isfile(value) and value.lower().endswith((".pkg", ".fpkg")):
-                            return extract_pkg(value, temp, lambda m: self._qlog(m, "info"),
-                                               app_dir=app_base_dir(),
-                                               bundled_path=resource_path("tools/pkgextract.exe")), True
-                        if os.path.isdir(value):
-                            return value, False
-                        raise ValueError(mt("invalid") + value)
-                    game_dir, game_is_temporary = stage(base)
-                    update_dir, update_is_temporary = stage(patch)
-                    dst = os.path.join(temp, "ps4_merge_" + uuid.uuid4().hex[:10])
-                    # The automatic preview must not overwrite the actual SFO TITLE.
-                    # Only an explicitly edited title is patched into PARAM.SFO.
-                    effective_title = "" if auto_title else title
-                    import time
-                    last_report = [0.0]
-                    def progress(copied, total, files, count):
-                        now = time.monotonic()
-                        if now - last_report[0] < 0.35 and copied < total:
-                            return
-                        last_report[0] = now
-                        percent = min(100.0, 100.0 * copied / max(1, total))
-                        msg = (f"{mt('merge_title')} %{percent:.1f} | "
-                               f"{copied / 1024**3:.2f}/{total / 1024**3:.2f} GB | "
-                               f"{files}/{count} dosya")
-                        self._qprogress(percent)
-                        self._qstatus(msg)
-                        if now - getattr(self, "_merge_last_log", 0) >= 5:
-                            self._merge_last_log = now
-                            self._qlog(msg, "info")
-                    self._qphase(mt("copying"))
-                    result = merge_ps4_folders(
-                        game_dir, update_dir, dst, effective_title,
-                        progress=progress,
-                        move_base=game_is_temporary,
-                        move_update=update_is_temporary,
-                    )
-                    # Generate PS4 ShadowMount+ JSON inside the merged TEMP
-                    # tree; never modify user-selected source folders.
-                    metadata = prepare_ps4_shadowmount_metadata(
-                        result["folder"], remove_snd0=remove_snd0)
-                    self._qlog("PS4 ShadowMount+ param.json: " + metadata["param_json"], "success")
-                    if remove_snd0:
-                        self._qlog("snd0.at9: " + (
-                            "silindi" if metadata["snd0_removed"] else "dosya zaten yok"), "info")
-                    merged_id = metadata["title_id"]
-                    # If the PKG header didn't advertise CUSA, resolve it after extraction.
-                    final_output_name = ((merged_id + ".ffpfsc") if auto_filename and merged_id else output_name)
-                    def done():
-                        # Automatically continue into the existing single-game packer.
-                        # UI changes and Tk worker startup must happen on the Tk thread.
-                        if self.batch_var.get():
-                            self.batch_var.set(False)
-                            self.on_mode_changed()
-                        self.platform_var.set("PS4")
-                        self.source_var.set(result["folder"])
-                        self.file_name_var.set(final_output_name)
-                        self._ps4_merge_busy = False
-                        self._qprogress(100)
-                        self._qstatus(mt("done"))
-                        self._ps4_cleanup_plan = {
-                            "merge": result["folder"],
-                            "staged": ([game_dir] if game_is_temporary else [])
-                                      + ([update_dir] if update_is_temporary else []),
-                            "temp": temp,
-                        }
-                        self._log("PS4 birleştirildi: " + result["folder"], "success")
-                        self._log("FFPFSC otomatik başlatılıyor: " + final_output_name, "info")
-                        self._retain_ps4_merge_log = True
-                        self._update_start_button_state()
-                        self.after_idle(self.start)
-                    self.after(0, done)
-                except Exception as exc:
-                    error = str(exc)
-                    def failed():
-                        self._ps4_merge_busy = False
-                        self._qstatus(mt("failed"))
-                        self._log("PS4 birleştirme hatası: " + error, "error")
-                        self._update_start_button_state()
-                        messagebox.showerror(mt("error"), error, parent=self)
-                    self.after(0, failed)
-            threading.Thread(target=worker, daemon=True).start()
         tk.Button(
-            footer, text=mt("submit"), command=merge,
+            footer, text=("Kuyruğa Ekle / Başlat" if is_tr else "Add to Queue / Start"), command=merge,
             bg=palette["green"], fg="white", activebackground="#0f7b43",
             activeforeground="white", relief="flat", bd=0,
             font=("Segoe UI", 12, "bold"), width=33, height=2,
