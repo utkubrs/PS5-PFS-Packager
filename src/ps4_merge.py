@@ -70,7 +70,7 @@ def sfo_fields_from_bytes(data: bytes):
     return {key:(data[offset:offset+length].split(b"\0",1)[0].decode("utf-8","replace") if fmt==0x0204 else data[offset:offset+length].hex())
             for key,fmt,length,maximum,offset,_ in _parse_sfo(data)}
 
-def merge_ps4_folders(base: str, update: str, destination: str, title: str="", progress=None) -> dict:
+def merge_ps4_folders(base: str, update: str, destination: str, title: str="", progress=None, move_base: bool=False, move_update: bool=False) -> dict:
     base,update,destination=map(lambda p:Path(p).resolve(),(base,update,destination))
     if not base.is_dir() or not (base/"eboot.bin").is_file() or not (base/"sce_sys"/"param.sfo").is_file():
         raise ValueError("Base must contain eboot.bin and sce_sys/param.sfo")
