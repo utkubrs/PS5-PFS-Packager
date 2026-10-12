@@ -8,8 +8,9 @@
 #include <strings.h>
 #include <sys/stat.h>
 
-#include "sm_log.h"
-#include "sm_paths.h"
+/* Equivalent to the upstream sm_log.h function contract. */
+extern void log_debug(const char *fmt, ...);
+#define PS4_DIAG_APP_DB_PATH "/system_data/priv/mms/app.db"
 
 #define PS4_DIAG_PATH_MAX 1024
 #define PS4_DIAG_TEXT_MAX 80
@@ -179,5 +180,5 @@ void sm_ps4_trophy_diag_snapshot_db(const char *title_id, const char *phase,
 
 void sm_ps4_trophy_diag_snapshot(const char *title_id, const char *phase,
                                  const char *source_sce_sys) {
-  sm_ps4_trophy_diag_snapshot_db(title_id, phase, source_sce_sys, APP_DB_PATH);
+  sm_ps4_trophy_diag_snapshot_db(title_id, phase, source_sce_sys, PS4_DIAG_APP_DB_PATH);
 }
