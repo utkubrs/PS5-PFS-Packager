@@ -1,17 +1,17 @@
 diff --git a/src/sm_install.c b/src/sm_install.c
 --- a/src/sm_install.c
 +++ b/src/sm_install.c
-@@ -15,8 +15,9 @@
+@@ -14,8 +14,9 @@
+ #include "sm_image_cache.h"
  #include "sm_paths.h"
  #include "sm_manual.h"
  #include "sm_shellcore_hooks.h"
- #include "sm_ps4_trophy_compat.h"
 +#include "sm_ps4_trophy_diag.h"
  
  #include <dlfcn.h>
  
  typedef int (*app_install_title_dir_fn_t)(const char *title_id,
-@@ -396,8 +397,9 @@
+@@ -384,8 +385,9 @@
                         (uint32_t)res);
      return false;
    }
