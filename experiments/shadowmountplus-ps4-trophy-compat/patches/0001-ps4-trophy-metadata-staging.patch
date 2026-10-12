@@ -1,0 +1,29 @@
+diff --git a/src/sm_install.c b/src/sm_install.c
+--- a/src/sm_install.c
++++ b/src/sm_install.c
+@@ -15,6 +15,7 @@
+ #include "sm_paths.h"
+ #include "sm_manual.h"
+ #include "sm_shellcore_hooks.h"
++#include "sm_ps4_trophy_compat.h"
+ 
+ #include <dlfcn.h>
+ 
+@@ -174,6 +175,17 @@
+     ok = false;
+   if (!copy_optional_trophy_metadata_file(src_sce_sys, dst_base, "param.json"))
+     ok = false;
++
++  /* Experimental PS4-only staging. Does not replace PS4 PKG/LNC registration. */
++  sm_ps4_trophy_stage_result_t ps4_stage;
++  if (sm_ps4_trophy_stage(title_id, src_sce_sys, dst_base, &ps4_stage) != 0) {
++    log_debug("  [PS4-TROPHY-EXPERIMENT] metadata staging failed: %s", title_id);
++    ok = false;
++  } else if (ps4_stage.is_ps4) {
++    log_debug("  [PS4-TROPHY-EXPERIMENT] title=%s copied=%u preserved=%u absent=%u (registration not guaranteed)",
++              title_id, ps4_stage.copied, ps4_stage.preserved,
++              ps4_stage.absent);
++  }
+ 
+   return ok;
+ }
