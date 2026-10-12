@@ -7492,9 +7492,7 @@ class App(tk.Tk):
                     try:
                         # MkPFS returned success; also require the output file to
                         # exist and be nonempty before touching TEMP.
-                        expected_output = os.path.join(out_dir, safe_filename(self.file_name_var.get().strip()))
-                        if not expected_output.lower().endswith(".ffpfsc"):
-                            expected_output += ".ffpfsc"
+                        expected_output = out_path  # path verified by MkPFS in this worker
                         if not os.path.isfile(expected_output) or os.path.getsize(expected_output) < 1024:
                             raise RuntimeError("FFPFSC output missing or too small")
                         cleanup_ps4_temp(plan["merge"], plan["staged"], plan["temp"], self._qlog)
