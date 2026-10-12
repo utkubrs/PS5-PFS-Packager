@@ -62,7 +62,7 @@ def detect_logical_cpu_count() -> int:
     except Exception:
         return 1
 
-APP_VERSION = "2.27"
+APP_VERSION = "2.28"
 APP_TITLE = "PS5 PFS Paketleyici"
 
 MKPFS_RELEASES_URL = "https://github.com/PSBrew/MkPFS/releases"
@@ -3612,6 +3612,7 @@ from upgrade_features import inspect_game, validate_preflight, recommended_block
 from ps4_inputs import is_ps4_game_folder, detect_ps4_title_id, inspect_ps4_source, extract_pkg, find_pkg_extractor
 from ps4_merge import merge_ps4_folders, edit_sfo_title, sfo_fields
 from ps4_merge_i18n import merge_text
+from ps4_cleanup import cleanup_ps4_temp
 
 class App(tk.Tk):
     def __init__(self):
@@ -3643,6 +3644,7 @@ class App(tk.Tk):
         self.mount_action = ""
         self._last_dat_progress_text = ""
         self._last_multi_preview_key = ""
+        self._ps4_cleanup_plan = None  # transient, only for this one-click conversion
 
         self.source_var = tk.StringVar()
         self.output_dir_var = tk.StringVar(value=normalize_path(os.path.join(Path.home(), "Downloads")))
@@ -6397,44 +6399,107 @@ class App(tk.Tk):
         dlg = tk.Toplevel(self)
         mt = lambda key: merge_text(self.lang_code(), key)
         dlg.title(mt("merge_title"))
-        dlg.geometry("850x510")
-        dlg.configure(bg="#151515")
+        dlg.configure(bg="#101827")
+        dlg.resizable(False, False)
+        dlg.withdraw()
+        dlg.transient(self)
+        width, height = 940, 616
+        self.update_idletasks()
+        dlg.update_idletasks()
+        # Center on the main application; clamp to the visible screen.
+        x = self.winfo_rootx() + (self.winfo_width() - width) // 2
+        y = self.winfo_rooty() + (self.winfo_height() - height) // 2
+        screen_w, screen_h = dlg.winfo_screenwidth(), dlg.winfo_screenheight()
+        x = max(0, min(x, max(0, screen_w - width)))
+        y = max(0, min(y, max(0, screen_h - height)))
+        dlg.geometry(f"{width}x{height}+{x}+{y}")
+
+        palette = {
+            "bg": "#101827",
+            "surface": "#192535",
+            "input": "#f1f5f9",
+            "text": "#f8fafc",
+            "muted": "#a6b8cd",
+            "blue": "#2563eb",
+            "green": "#159b53",
+        }
+        is_tr = self.lang_code() == "tr"
+        header = tk.Frame(dlg, bg=palette["bg"])
+        header.pack(fill="x", padx=28, pady=(24, 14))
+        tk.Label(header, text=mt("merge_title"),
+                 bg=palette["bg"], fg=palette["text"],
+                 font=("Segoe UI", 19, "bold"), anchor="w").pack(anchor="w")
+        tk.Label(header, text=("Ana oyun ve güncellemeyi tek tuşla FFPFSC dosyasına dönüştür."
+                               if is_tr else "Convert a game and its update into FFPFSC in one step."),
+                 bg=palette["bg"], fg=palette["muted"],
+                 font=("Segoe UI", 10), anchor="w").pack(anchor="w", pady=(5, 0))
+        tk.Frame(dlg, bg="#304257", height=1).pack(fill="x", padx=28)
+
+        panel = tk.Frame(dlg, bg=palette["surface"], padx=20, pady=16)
+        panel.pack(fill="x", padx=28, pady=(18, 12))
+        panel.grid_columnconfigure(1, weight=1)
+
+        def section(title, index):
+            tk.Label(panel, text=title,
+                     bg=palette["surface"], fg="#8db5ff",
+                     font=("Segoe UI", 10, "bold"),
+                     anchor="w").grid(row=index, column=0, columnspan=4,
+                                       sticky="w", pady=(3 if index == 0 else 13, 7))
+
+        def entry_row(caption, var, index, buttons=None):
+            tk.Label(panel, text=caption, bg=palette["surface"],
+                     fg=palette["text"], font=("Segoe UI", 10),
+                     anchor="w").grid(row=index, column=0, sticky="w", padx=(0, 14), pady=6)
+            entry = tk.Entry(panel, textvariable=var, relief="flat", bd=0,
+                             bg=palette["input"], fg="#0f172a",
+                             insertbackground="#0f172a", font=("Segoe UI", 10))
+            entry.grid(row=index, column=1, sticky="ew", ipady=7, pady=6)
+            actions = tk.Frame(panel, bg=palette["surface"])
+            actions.grid(row=index, column=2, columnspan=2, sticky="e", padx=(8, 0))
+            for text_label, callback in buttons or []:
+                tk.Button(actions, text=text_label, command=callback,
+                          bg="#30445e", fg="white", relief="flat", bd=0,
+                          activebackground=palette["blue"], activeforeground="white",
+                          font=("Segoe UI", 9, "bold"), padx=10, pady=7,
+                          cursor="hand2").pack(side="left", padx=(3, 0))
+            return entry
+
+        section("OYUN DOSYALARI" if is_tr else "GAME FILES", 0)
         entries = []
-        for caption in (mt("base"), mt("patch"), mt("title")):
-            frame = tk.Frame(dlg, bg="#151515")
-            frame.pack(fill="x", padx=15, pady=6)
-            tk.Label(frame, text=caption, fg="white", bg="#151515",
-                     width=29, anchor="w").pack(side="left")
+        for index, caption in enumerate((mt("base"), mt("patch"))):
             value = tk.StringVar()
-            tk.Entry(frame, textvariable=value, width=52).pack(side="left", fill="x", expand=True)
-            if len(entries) < 2:
-                def browse(v=value):
-                    selected = filedialog.askopenfilename(
-                        parent=dlg, title=mt("pkg"),
-                        filetypes=[("PS4 PKG", "*.pkg"), ("Tüm dosyalar", "*.*")])
-                    if selected:
-                        v.set(selected)
-                tk.Button(frame, text=mt("pkg"), command=browse).pack(side="left", padx=3)
-                tk.Button(frame, text=mt("folder"), command=lambda v=value:
-                          v.set(filedialog.askdirectory(parent=dlg) or v.get())).pack(side="left")
+            def browse_pkg(v=value):
+                selected = filedialog.askopenfilename(
+                    parent=dlg, title=mt("pkg"),
+                    filetypes=[("PS4 PKG", "*.pkg *.fpkg"), ("All files", "*.*")])
+                if selected:
+                    v.set(selected)
+            def browse_folder(v=value):
+                selected = filedialog.askdirectory(parent=dlg)
+                if selected:
+                    v.set(selected)
+            entry_row(caption, value, index + 1,
+                      [(mt("pkg"), browse_pkg), (mt("folder"), browse_folder)])
             entries.append(value)
-        # Values are initialized from the main screen and synchronized when accepted.
+
+        section("OYUN BİLGİLERİ VE ÇIKIŞ" if is_tr else "GAME DETAILS AND OUTPUT", 3)
+        name_var = tk.StringVar()
+        entry_row(mt("title"), name_var, 4)
+        entries.append(name_var)
         settings = {
             "output": tk.StringVar(value=self.output_dir_var.get()),
             "filename": tk.StringVar(value=self.file_name_var.get()),
             "temp": tk.StringVar(value=self.temp_dir_var.get()),
         }
-        for name in ("output", "filename", "temp"):
-            frame = tk.Frame(dlg, bg="#151515")
-            frame.pack(fill="x", padx=15, pady=5)
-            tk.Label(frame, text=mt(name), fg="white", bg="#151515",
-                     width=29, anchor="w").pack(side="left")
-            tk.Entry(frame, textvariable=settings[name], width=52).pack(side="left", fill="x", expand=True)
+        for index, name in enumerate(("output", "filename", "temp"), start=5):
+            options = []
             if name != "filename":
-                tk.Button(frame, text=mt("browse"),
-                          command=lambda key=name: settings[key].set(
-                              filedialog.askdirectory(parent=dlg) or settings[key].get()
-                          )).pack(side="left", padx=3)
+                def browse_dir(key=name):
+                    selected = filedialog.askdirectory(parent=dlg)
+                    if selected:
+                        settings[key].set(selected)
+                options.append((mt("browse"), browse_dir))
+            entry_row(mt(name), settings[name], index, options)
         # Keep suggestions editable. Later edits to TITLE or output filename win
         # over subsequent input changes and over internal PKG metadata.
         suggested_title = [""]
@@ -6465,10 +6530,12 @@ class App(tk.Tk):
                     setting_filename_internally[0] = False
             suggested_filename[0] = candidate
         entries[0].trace_add("write", update_ps4_suggestions)
-        tk.Label(dlg, text=mt("note"),
-                 bg="#151515", fg="#cbd5e1", wraplength=710).pack(pady=12)
+        tk.Label(dlg, text=mt("note"), bg=palette["bg"],
+                 fg=palette["muted"], wraplength=860,
+                 font=("Segoe UI", 9)).pack(pady=(4, 7))
         status = tk.StringVar(value=mt("ready"))
-        tk.Label(dlg, textvariable=status, bg="#151515", fg="#a7f3d0").pack(pady=4)
+        tk.Label(dlg, textvariable=status, bg=palette["bg"],
+                 fg="#86efac", font=("Segoe UI", 10, "bold")).pack(pady=(3, 0))
         def merge():
             if getattr(self, "_ps4_merge_busy", False):
                 return
@@ -6575,6 +6642,12 @@ class App(tk.Tk):
                         self._ps4_merge_busy = False
                         self._qprogress(100)
                         self._qstatus(mt("done"))
+                        self._ps4_cleanup_plan = {
+                            "merge": result["folder"],
+                            "staged": ([game_dir] if game_is_temporary else [])
+                                      + ([update_dir] if update_is_temporary else []),
+                            "temp": temp,
+                        }
                         self._log("PS4 birleştirildi: " + result["folder"], "success")
                         self._log("FFPFSC otomatik başlatılıyor: " + final_output_name, "info")
                         self._retain_ps4_merge_log = True
@@ -6591,9 +6664,15 @@ class App(tk.Tk):
                         messagebox.showerror(mt("error"), error, parent=self)
                     self.after(0, failed)
             threading.Thread(target=worker, daemon=True).start()
-        btn = tk.Button(dlg, text=mt("submit"), command=merge,
-                        bg="#16a34a", fg="white", font=("Segoe UI", 11, "bold"))
-        btn.pack(pady=10)
+        tk.Button(dlg, text=mt("submit"), command=merge,
+                  bg=palette["green"], fg="white", activebackground="#0f7b43",
+                  activeforeground="white", relief="flat", bd=0,
+                  font=("Segoe UI", 12, "bold"), padx=29, pady=12,
+                  cursor="hand2").pack(pady=(12, 16))
+        dlg.deiconify()
+        dlg.lift()
+        dlg.focus_force()
+
 
     def show_sfo_editor(self):
         source=normalize_path(self.source_var.get().strip())
@@ -7396,7 +7475,7 @@ class App(tk.Tk):
 
                 completed_count += 1
 
-                if delete_source:
+                if delete_source and not getattr(self, "_ps4_cleanup_plan", None):
                     self._qphase(self.tr("delete_source_phase"))
                     safe_delete_game_folder(target, out_dir, temp_dir, self._qlog, self.tr, self.tr_format)
 
@@ -7408,6 +7487,17 @@ class App(tk.Tk):
 
             all_successful = bool(targets) and completed_count == len(targets) and not self.cancel_requested
             if all_successful:
+                plan = getattr(self, "_ps4_cleanup_plan", None)
+                if plan and len(targets) == 1 and normalize_path(targets[0]) == normalize_path(plan["merge"]):
+                    try:
+                        # MkPFS returned success; also require the output file to
+                        # exist and be nonempty before touching TEMP.
+                        expected_output = out_path  # path verified by MkPFS in this worker
+                        if not os.path.isfile(expected_output) or os.path.getsize(expected_output) < 1024:
+                            raise RuntimeError("FFPFSC output missing or too small")
+                        cleanup_ps4_temp(plan["merge"], plan["staged"], plan["temp"], self._qlog)
+                    except Exception as cleanup_exc:
+                        self._qlog("TEMP korunuyor; temizleme atlandı: " + str(cleanup_exc), "warn")
                 self.play_completion_sound()
                 if self.shutdown_var.get():
                     self.schedule_pc_shutdown()
@@ -7418,6 +7508,9 @@ class App(tk.Tk):
             except Exception:
                 pass
         finally:
+            # Never delete TEMP on a failed/aborted conversion. A later manual
+            # run must not inherit ownership of a previous session's folders.
+            self._ps4_cleanup_plan = None
             self._stop_operation_timer(clear=False)
             self.queue.put(("done",))
 
