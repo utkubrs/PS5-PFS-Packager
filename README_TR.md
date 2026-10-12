@@ -27,6 +27,16 @@ Bu proje MkPFS 1.1.0 tabanlıdır ve PS5/PS4 platform seçimi, sıkıştırma pr
 - PKG veya klasör kaynakları, işin sırası geldiğinde TEMP içinde hazırlanır; orijinaller korunur.
 - Aynı hedefe yazan ikinci bir işin kuyruğa eklenmesi engellenir.
 
+## v2.32.0 – PS4 güncelleme sürümü PARAM.SFO'dan alınır
+
+- **Ana oyun + update:** Birleşik FFPFSC için update klasörünün `sce_sys/param.sfo` dosyası kullanılır. Böylece update'in `APP_VER` bilgisi korunur.
+- Kullanıcının yazdığı özel oyun adı (`TITLE`) yalnızca TEMP içindeki birleşik SFO'ya uygulanır.
+- Update SFO'sundaki `CATEGORY=gp` değeri, birleşik ana oyun imajının çalışabilmesi için ana oyunun `CATEGORY=gd` değerine çevrilir. Ana oyunun görselleri korunur.
+- **Update yoksa:** Ana oyunun kendi `param.sfo` dosyası kullanılır, eskisi gibi çalışır.
+- Log ekranında `PS4 PARAM.SFO kaynağı` ve `APP_VER` bilgisi gösterilir.
+
+**Not:** PS5 ekranında 1.01 görünmesini test etmek için birleştirilen oyunu cihazda kontrol etmek gerekir; PC paket testi sürüm gösterimini garanti etmez.
+
 ## Gereksinimler
 
 - Windows 10 / Windows 11 64-bit
