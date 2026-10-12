@@ -1,0 +1,25 @@
+name: PS4 trophy compatibility experiment tests
+on:
+  push:
+    branches:
+      - experimental/ps4-trophy-compat-beta5fix1
+  workflow_dispatch:
+
+jobs:
+  host-and-upstream-patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and run host filesystem regression tests
+        run: bash experiments/shadowmountplus-ps4-trophy-compat/tests/run_host_tests.sh
+      - name: Verify patch applies to pinned upstream ShadowMountPlus
+        run: |
+          git clone --quiet https://github.com/drakmor/ShadowMountPlus.git /tmp/smps4-upstream
+          cd /tmp/smps4-upstream
+          git checkout --quiet 98c524890176c7b474fcb03387bec88c4a559861
+          git apply --check "$GITHUB_WORKSPACE/experiments/shadowmountplus-ps4-trophy-compat/patches/0001-ps4-trophy-metadata-staging.patch"
+          git apply "$GITHUB_WORKSPACE/experiments/shadowmountplus-ps4-trophy-compat/patches/0001-ps4-trophy-metadata-staging.patch"
+          cp "$GITHUB_WORKSPACE/experiments/shadowmountplus-ps4-trophy-compat/include/sm_ps4_trophy_compat.h" include/
+          cp "$GITHUB_WORKSPACE/experiments/shadowmountplus-ps4-trophy-compat/src/sm_ps4_trophy_compat.c" src/
+          python3 "$GITHUB_WORKSPACE/experiments/shadowmountplus-ps4-trophy-compat/check_integration.py" .
+          cc -std=gnu11 -Wall -Wextra -Werror -Iinclude -fsyntax-only src/sm_ps4_trophy_compat.c
