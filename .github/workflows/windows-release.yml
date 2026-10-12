@@ -107,6 +107,11 @@ jobs:
           New-Item -ItemType Directory -Force $src | Out-Null
           [IO.File]::WriteAllBytes((Join-Path $src 'eboot.bin'), [byte[]](0..127))
           [IO.File]::WriteAllText((Join-Path $src 'readme.txt'), 'Synthetic MkPFS smoke-test payload')
+          # The merge staging directory MUST NOT become the nested image name.
+          # ShadowMount+ needs sce_sys/param.json within the wrapped exFAT.
+          $meta = Join-Path $src 'sce_sys'
+          New-Item -ItemType Directory -Force $meta | Out-Null
+          [IO.File]::WriteAllText((Join-Path $meta 'param.json'), '{"titleId":"CUSA12381","titleName":"Chim Party (TR)","localizedParameters":{"en-US":{"titleName":"Chim Party (TR)"}}}')
           $env:TEMP = $work
           $env:TMP = $work
           $log = Join-Path $env:RUNNER_TEMP 'mkpfs-real-pack-out.txt'
@@ -128,6 +133,39 @@ jobs:
           if (!(Test-Path $output) -or (Get-Item $output).Length -lt 1024) {
             throw 'MkPFS did not create a valid-sized FFPFSC output'
           }
+          # Inspect the real outer PFSC image to prevent the previous bug:
+          # ps4_merge_<random>.exfat instead of CUSA12381.exfat.
+          $outer = Join-Path $work 'inspect_outer'
+          $inner = Join-Path $work 'inspect_inner'
+          $extractLog = Join-Path $env:RUNNER_TEMP 'mkpfs-image-inspect.txt'
+          $extractErr = Join-Path $env:RUNNER_TEMP 'mkpfs-image-inspect.err'
+          $unpack = Start-Process -FilePath $exe -ArgumentList @(
+            '--internal-mkpfs','unpack',$output,$outer
+          ) -RedirectStandardOutput $extractLog -RedirectStandardError $extractErr -Wait -PassThru
+          if ($unpack.ExitCode -ne 0) {
+            Write-Host (Get-Content $extractLog -Raw -ErrorAction SilentlyContinue)
+            Write-Host (Get-Content $extractErr -Raw -ErrorAction SilentlyContinue)
+            throw "PFSC outer unpack failed: $($unpack.ExitCode)"
+          }
+          $nested = Get-ChildItem -Path $outer -Recurse -Filter '*.exfat' -File
+          if ($nested.Count -ne 1 -or $nested[0].Name -cne 'CUSA12381.exfat') {
+            throw "Wrong nested exFAT name; expected CUSA12381.exfat, got: $($nested.Name -join ', ')"
+          }
+          $deep = Start-Process -FilePath $exe -ArgumentList @(
+            '--internal-mkpfs','unpack','--deep',$output,$inner
+          ) -RedirectStandardOutput $extractLog -RedirectStandardError $extractErr -Wait -PassThru
+          if ($deep.ExitCode -ne 0) {
+            throw "PFSC nested exFAT unpack failed: $($deep.ExitCode)"
+          }
+          $json = Join-Path $inner 'sce_sys/param.json'
+          if (!(Test-Path $json)) {
+            throw 'Missing sce_sys/param.json from nested exFAT root'
+          }
+          $id = (Get-Content $json -Raw | ConvertFrom-Json).titleId
+          if ($id -ne 'CUSA12381') {
+            throw "Incorrect nested ShadowMount+ PS4 titleId: $id"
+          }
+          Write-Host 'FFPFSC LAYOUT OK: CUSA12381.exfat -> sce_sys/param.json'
 
       - name: Package executable and checksums
         shell: pwsh
