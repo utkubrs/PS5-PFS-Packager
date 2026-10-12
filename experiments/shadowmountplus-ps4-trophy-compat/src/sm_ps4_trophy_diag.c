@@ -5,6 +5,7 @@
 #include <sqlite3.h>
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/stat.h>
 
 #include "sm_log.h"
