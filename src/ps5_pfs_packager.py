@@ -3609,7 +3609,7 @@ def run_internal_mkpfs(args: list[str]) -> int:
 
 
 from upgrade_features import inspect_game, validate_preflight, recommended_block_size
-from ps4_inputs import is_ps4_game_folder, detect_ps4_title_id, inspect_ps4_source, extract_pkg
+from ps4_inputs import is_ps4_game_folder, detect_ps4_title_id, inspect_ps4_source, extract_pkg, find_pkg_extractor
 from ps4_merge import merge_ps4_folders, edit_sfo_title, sfo_fields
 from ps4_merge_i18n import merge_text
 
@@ -6510,7 +6510,9 @@ class App(tk.Tk):
                     import uuid
                     def stage(value):
                         if os.path.isfile(value) and value.lower().endswith((".pkg", ".fpkg")):
-                            return extract_pkg(value, temp, lambda m: self._qlog(m, "info")), True
+                            return extract_pkg(value, temp, lambda m: self._qlog(m, "info"),
+                                               app_dir=app_base_dir(),
+                                               bundled_path=resource_path("tools/pkgextract.exe")), True
                         if os.path.isdir(value):
                             return value, False
                         raise ValueError(mt("invalid") + value)
@@ -7018,7 +7020,9 @@ class App(tk.Tk):
                         continue
                     try:
                         original_pkg = target
-                        target = extract_pkg(target, temp_dir, lambda message: self._qlog(message, "info"))
+                        target = extract_pkg(target, temp_dir, lambda message: self._qlog(message, "info"),
+                                              app_dir=app_base_dir(),
+                                              bundled_path=resource_path("tools/pkgextract.exe"))
                         self._qlog(f"PKG extracted: {original_pkg} -> {target}", "success")
                         self._qlog("Extracted files remain in TEMP for inspection and manual cleanup.", "warn")
                     except Exception as exc:
@@ -7871,6 +7875,20 @@ def main():
     # Child mode used by the already elevated GUI to run MkPFS internally.
     if len(sys.argv) >= 2 and sys.argv[1] == "--internal-mkpfs":
         sys.exit(run_internal_mkpfs(sys.argv[2:]))
+
+    # A non-interactive diagnostic is exercised on the BUILT Windows EXE in CI.
+    # It checks precisely the path resolution used by the merge dialog.
+    if len(sys.argv) >= 2 and sys.argv[1] == "--check-pkg-extractor":
+        _ensure_child_standard_streams()
+        location = find_pkg_extractor(
+            app_dir=app_base_dir(),
+            bundled_path=resource_path("tools/pkgextract.exe"),
+        )
+        if location:
+            print("PKG_EXTRACTOR_OK: " + location, flush=True)
+            sys.exit(0)
+        print("PKG_EXTRACTOR_MISSING at " + app_base_dir(), flush=True)
+        sys.exit(4)
 
     # The compiled EXE also carries a requireAdministrator manifest.
     # This fallback keeps direct Python launches consistent: elevation
