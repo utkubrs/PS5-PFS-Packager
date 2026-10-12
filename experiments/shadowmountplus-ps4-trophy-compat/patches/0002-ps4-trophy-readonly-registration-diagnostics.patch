@@ -1,0 +1,46 @@
+diff --git a/src/sm_install.c b/src/sm_install.c
+--- a/src/sm_install.c
++++ b/src/sm_install.c
+@@ -15,8 +15,9 @@
+ #include "sm_paths.h"
+ #include "sm_manual.h"
+ #include "sm_shellcore_hooks.h"
+ #include "sm_ps4_trophy_compat.h"
++#include "sm_ps4_trophy_diag.h"
+ 
+ #include <dlfcn.h>
+ 
+ typedef int (*app_install_title_dir_fn_t)(const char *title_id,
+@@ -396,8 +397,9 @@
+                        (uint32_t)res);
+     return false;
+   }
+ 
++  sm_ps4_trophy_diag_snapshot(title_id, "after-register", src_sce_sys);
+   return true;
+ }
+ 
+ // --- Execution (per discovered candidate) ---
+diff --git a/src/sm_game_lifecycle.c b/src/sm_game_lifecycle.c
+--- a/src/sm_game_lifecycle.c
++++ b/src/sm_game_lifecycle.c
+@@ -12,8 +12,9 @@
+ #include "sm_game_lifecycle.h"
+ #include "sm_gameinfo.h"
+ #include "sm_limits.h"
+ #include "sm_log.h"
++#include "sm_ps4_trophy_diag.h"
+ #include "sm_mdbg.h"
+ #include "sm_path_utils.h"
+ #include "sm_paths.h"
+ #include "sm_pkg_backport.h"
+@@ -425,8 +426,9 @@
+   }
+ 
+   log_debug("  [GAME] started: %s pid=%ld app_id=0x%08X", title_id,
+             (long)pid, app_id);
++  sm_ps4_trophy_diag_snapshot(title_id, "game-start", NULL);
+   bool new_game_process = atomic_load(&g_active_game_pid) != pid;
+   publish_active_game(pid, title_id, app_id);
+   if (new_game_process)
+     sm_mdbg_game_on_exec(pid, title_id, exec_time_us);
