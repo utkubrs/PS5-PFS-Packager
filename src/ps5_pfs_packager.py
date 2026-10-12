@@ -6877,7 +6877,14 @@ class App(tk.Tk):
         return True
 
     def start(self):
-        self.on_mode_changed()
+        if getattr(self, "_retain_ps4_merge_log", False):
+            # Mode refresh normally auto-generates the filename. Keep the
+            # manually selected name from the preceding PS4 merge dialog.
+            selected_output_name = self.file_name_var.get()
+            self.on_mode_changed()
+            self.file_name_var.set(selected_output_name)
+        else:
+            self.on_mode_changed()
         if not self._is_ready_to_start():
             return
         if not self.validate():
