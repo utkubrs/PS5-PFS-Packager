@@ -8,6 +8,8 @@ from __future__ import annotations
 import json
 import os
 import re
+import hashlib
+import struct
 from pathlib import Path
 
 from ps4_merge import _parse_sfo
@@ -21,6 +23,33 @@ TITLE_LOCALES = (
     "en-GB", "tr-TR", "es-419", "ar-AE", "fr-CA", "cs-CZ",
     "hu-HU", "el-GR", "ro-RO", "th-TH", "vi-VN", "id-ID",
 )
+
+
+
+def repair_ps4_npbind_footer(root: Path) -> bool:
+    """Repair only an app-staged valid npbind.dat SHA-1 footer.
+
+    Matches the working PS4 PKG Tool converter; no repairs or writes are
+    performed when the structure is unknown or no file exists.
+    """
+    filename = root / "sce_sys" / "npbind.dat"
+    if not filename.is_file() or filename.is_symlink():
+        return False
+    data = filename.read_bytes()
+    if len(data) < 0x80 + 0x180 + 20:
+        return False
+    magic, version, declared_size, entry_size, count = struct.unpack_from(">IIQQQ", data, 0)
+    if (magic != 0xD294A018 or version != 1 or declared_size != len(data)
+            or entry_size != 0x180 or count < 1
+            or 0x80 + count * 0x180 + 20 != len(data)):
+        return False
+    digest = hashlib.sha1(data[:-20]).digest()
+    if digest == data[-20:]:
+        return False
+    with filename.open("r+b") as f:
+        f.seek(-20, os.SEEK_END)
+        f.write(digest)
+    return True
 
 
 def read_ps4_sfo_fields(path: Path) -> dict:
@@ -103,13 +132,14 @@ def prepare_ps4_shadowmount_metadata(merged_folder: str, remove_snd0: bool = Fal
     if parsed.get("titleId") != title_id or not parsed.get("localizedParameters", {}).get("en-US", {}).get("titleName"):
         raise ValueError("ShadowMount+ param.json compatibility verification failed")
 
+    npbind_repaired = repair_ps4_npbind_footer(root)
     removed = False
     if remove_snd0:
         sound = sce_sys / "snd0.at9"
         if sound.is_file():
             sound.unlink()
             removed = True
-    return {"title_id": title_id, "title": title, "param_json": str(json_path), "snd0_removed": removed}
+    return {"title_id": title_id, "title": title, "param_json": str(json_path), "snd0_removed": removed, "npbind_repaired": npbind_repaired}
 
 
 def prepare_existing_temp_merge(source: str, selected_temp: str, remove_snd0: bool = False) -> dict | None:
