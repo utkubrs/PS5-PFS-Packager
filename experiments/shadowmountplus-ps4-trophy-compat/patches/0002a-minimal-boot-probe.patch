@@ -1,0 +1,29 @@
+diff --git a/src/sm_shellcore_hooks.c b/src/sm_shellcore_hooks.c
+--- a/src/sm_shellcore_hooks.c
++++ b/src/sm_shellcore_hooks.c
+@@ -761,8 +761,10 @@
+               hooks.remote.offsets->name, (long)pid,
+               (unsigned long)bridge_address, blob_size,
+               (unsigned long)launch_trampoline,
+               install_hook_enabled ? 1 : 0);
++    log_debug("  [PS4-TROPHY-EXP2A] boot-check fw=%s minimal-no-db",
++              hooks.remote.offsets->name);
+   } else if (cleanup_pending) {
+     hooks.bridge_address = bridge_address;
+     hooks.bridge_size = blob_size;
+     hooks.hook_count = patched_count;
+diff --git a/src/sm_game_lifecycle.c b/src/sm_game_lifecycle.c
+--- a/src/sm_game_lifecycle.c
++++ b/src/sm_game_lifecycle.c
+@@ -425,8 +425,11 @@
+   }
+ 
+   log_debug("  [GAME] started: %s pid=%ld app_id=0x%08X", title_id,
+             (long)pid, app_id);
++  if (title_id && strncmp(title_id, "CUSA", 4) == 0)
++    log_debug("  [PS4-TROPHY-EXP2A] game-check title=%s app_id=0x%08X",
++              title_id, app_id);
+   bool new_game_process = atomic_load(&g_active_game_pid) != pid;
+   publish_active_game(pid, title_id, app_id);
+   if (new_game_process)
+     sm_mdbg_game_on_exec(pid, title_id, exec_time_us);
