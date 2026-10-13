@@ -1,0 +1,139 @@
+diff --git a/src/sm_shellcore_service.c b/src/sm_shellcore_service.c
+--- a/src/sm_shellcore_service.c
++++ b/src/sm_shellcore_service.c
+@@ -480,9 +480,102 @@
+ bool sm_shellcore_ensure_title_runtime(const char *title_id) {
+   return mount_managed_title_runtime(title_id, true, true, NULL) == 0;
+ }
+ 
++
++/*
++ * EXP5 — passive phase snapshots for PS4 PKG vs FFPFSC.  The existing
++ * ShellCore launch/sandbox hooks are observed; NO new hook or syscall
++ * redirection is installed. This does not capture internal LNC/NPDRM calls.
++ */
++static bool exp5_is_cusa(const char *title_id) {
++  if (!title_id || strlen(title_id) != 9 ||
++      strncmp(title_id, "CUSA", 4) != 0)
++    return false;
++  for (int i = 4; i < 9; ++i) {
++    if (title_id[i] < '0' || title_id[i] > '9')
++      return false;
++  }
++  return true;
++}
++
++static bool exp5_join(char *out, size_t capacity,
++                      const char *root, const char *suffix) {
++  int n = snprintf(out, capacity, "%s/%s", root, suffix);
++  return n >= 0 && (size_t)n < capacity;
++}
++
++static void exp5_mount_at(const char *title_id, const char *phase,
++                          const char *label, const char *path) {
++  struct statfs fs;
++  if (statfs(path, &fs) != 0) {
++    log_debug("  [PS4-TROPHY-EXP5] title=%s phase=%s path=%s "
++              "state=unavailable errno=%d",
++              title_id, phase, label, errno);
++    return;
++  }
++  bool exact = strcmp(fs.f_mntonname, path) == 0;
++  log_debug("  [PS4-TROPHY-EXP5] title=%s phase=%s path=%s "
++            "state=%s fs=%.*s from=%.*s mounted-on=%.*s flags=0x%llX",
++            title_id, phase, label, exact ? "exact-mount" : "ancestor",
++            32, fs.f_fstypename, 180, fs.f_mntfromname,
++            180, fs.f_mntonname, (unsigned long long)fs.f_flags);
++}
++
++static void exp5_file_at(const char *title_id, const char *phase,
++                         const char *label, const char *path) {
++  struct stat st;
++  int rc = lstat(path, &st);
++  int err = rc < 0 ? errno : 0;
++  log_debug("  [PS4-TROPHY-EXP5] title=%s phase=%s meta=%s "
++            "regular=%d errno=%d",
++            title_id, phase, label,
++            rc == 0 && S_ISREG(st.st_mode) ? 1 : 0, err);
++}
++
++static void exp5_phase_snapshot(const char *title_id,
++                                const char *phase, int operation_status) {
++  if (!exp5_is_cusa(title_id))
++    return;
++  int saved_errno = errno;
++  char path[MAX_PATH], root[MAX_PATH];
++  char tracked[MAX_PATH];
++  bool is_managed = read_mount_link(title_id, tracked, sizeof(tracked));
++  log_debug("  [PS4-TROPHY-EXP5] title=%s phase=%s "
++            "result=%d managed=%d source=%.*s mode=readonly",
++            title_id, phase, operation_status, is_managed ? 1 : 0,
++            180, is_managed ? tracked : "(native/untracked)");
++
++  if (snprintf(path, sizeof(path), "/mnt/sandbox/pfsmnt/%s-app0",
++               title_id) > 0)
++    exp5_mount_at(title_id, phase, "native-pfsmnt-app0", path);
++  if (snprintf(path, sizeof(path), "/mnt/sandbox/pfsmnt/%s-app0-nest",
++               title_id) > 0)
++    exp5_mount_at(title_id, phase, "native-pfsmnt-nest", path);
++  if (snprintf(path, sizeof(path), "/system_ex/app/%s",
++               title_id) > 0)
++    exp5_mount_at(title_id, phase, "system-ex-title", path);
++  if (snprintf(path, sizeof(path), "/mnt/sandbox/%s_000/app0",
++               title_id) > 0)
++    exp5_mount_at(title_id, phase, "sandbox-app0", path);
++
++  if (snprintf(root, sizeof(root), "/system_data/priv/appmeta/%s",
++               title_id) > 0) {
++    static const char *const names[] = {
++        "param.sfo", "npbind.dat", "nptitle.dat",
++        "trophy2/npbind.dat", "uds/npbind.dat"};
++    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); ++i) {
++      if (!exp5_join(path, sizeof(path), root, names[i]))
++        continue;
++      exp5_file_at(title_id, phase, names[i], path);
++    }
++  }
++  log_debug("  [PS4-TROPHY-EXP5] title=%s phase=%s snapshot=complete",
++            title_id, phase);
++  errno = saved_errno;
++}
++
+ static int handle_launch_request(const char *title_id) {
+   pthread_mutex_lock(&g_service.mutex);
+   g_service.pending_launch_title_id[0] = '\0';
+   g_service.pending_sandbox_ready_handled = false;
+   if (is_supported_game_title_id(title_id)) {
+@@ -481,9 +574,10 @@
+   return mount_managed_title_runtime(title_id, true, true, NULL) == 0;
+ }
+ 
+ static int handle_launch_request(const char *title_id) {
++  exp5_phase_snapshot(title_id, "launch-request", -1);
+   pthread_mutex_lock(&g_service.mutex);
+   g_service.pending_launch_title_id[0] = '\0';
+   g_service.pending_sandbox_ready_handled = false;
+   if (is_supported_game_title_id(title_id)) {
+     (void)strlcpy(g_service.pending_launch_title_id, title_id,
+@@ -493,9 +587,10 @@
+   }
+   pthread_mutex_unlock(&g_service.mutex);
+ 
+   int status = mount_managed_title_runtime(title_id, false, true, NULL);
++  exp5_phase_snapshot(title_id, "launch-prepared", status);
+   if (status != 0) {
+     // The launch hook also observes stock games and ShellCore system apps.
+     // ENOENT/EINVAL mean "not managed here", not a runtime mount failure.
+     if (status != ENOENT && status != EINVAL) {
+       log_debug("  [SHELLCORE] launch mount unavailable: %s status=%d (%s)",
+@@ -893,9 +988,10 @@
+   pthread_mutex_unlock(&g_service.mutex);
+ 
+   if (effective_title_id[0] == '\0' || already_handled)
+     return 0;
++  exp5_phase_snapshot(effective_title_id, "sandbox-ready", 0);
+ 
+   errno = 0;
+   bool package_ready =
+       sm_pkg_backport_on_sandbox_ready(effective_title_id);
+   int package_status = package_ready ? 0 : (errno != 0 ? errno : EIO);
