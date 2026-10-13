@@ -1,7 +1,7 @@
 diff --git a/src/sm_shellcore_service.c b/src/sm_shellcore_service.c
 --- a/src/sm_shellcore_service.c
 +++ b/src/sm_shellcore_service.c
-@@ -480,9 +480,102 @@
+@@ -480,9 +480,103 @@
  bool sm_shellcore_ensure_title_runtime(const char *title_id) {
    return mount_managed_title_runtime(title_id, true, true, NULL) == 0;
  }
@@ -100,21 +100,11 @@ diff --git a/src/sm_shellcore_service.c b/src/sm_shellcore_service.c
 +}
 +
  static int handle_launch_request(const char *title_id) {
-   pthread_mutex_lock(&g_service.mutex);
-   g_service.pending_launch_title_id[0] = '\0';
-   g_service.pending_sandbox_ready_handled = false;
-   if (is_supported_game_title_id(title_id)) {
-@@ -481,9 +574,10 @@
-   return mount_managed_title_runtime(title_id, true, true, NULL) == 0;
- }
- 
- static int handle_launch_request(const char *title_id) {
 +  exp5_phase_snapshot(title_id, "launch-request", -1);
    pthread_mutex_lock(&g_service.mutex);
    g_service.pending_launch_title_id[0] = '\0';
    g_service.pending_sandbox_ready_handled = false;
    if (is_supported_game_title_id(title_id)) {
-     (void)strlcpy(g_service.pending_launch_title_id, title_id,
 @@ -493,9 +587,10 @@
    }
    pthread_mutex_unlock(&g_service.mutex);
