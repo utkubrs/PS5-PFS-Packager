@@ -47,6 +47,7 @@ static void read_check(const char *path, const char *expected) {
   assert(strcmp(data,expected)==0);
 }
 int main(void) {
+  exp3_ps4_mirror_on_mount("PPSA03772", "/tmp", "/tmp");
   assert(exp3_ps4_title_id("CUSA03772"));
   assert(!exp3_ps4_title_id("PPSA03772"));
   assert(!exp3_ps4_title_id("CUSA0377X"));
