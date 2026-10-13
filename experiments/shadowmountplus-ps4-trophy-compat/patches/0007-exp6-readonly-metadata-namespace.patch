@@ -1,0 +1,100 @@
+diff --git a/src/sm_shellcore_service.c b/src/sm_shellcore_service.c
+--- a/src/sm_shellcore_service.c
++++ b/src/sm_shellcore_service.c
+@@ -570,7 +570,89 @@
+   errno = saved_errno;
+ }
+ 
++
++/*
++ * EXP6: compare only file attributes and accessibility in known PS4
++ * metadata namespaces at sandbox-ready time, not trophy API calls.
++ * All operations are lstat(2) / path formatting / logging.
++ * Never read or print content, keys, NP bind bytes, or trophy records.
++ */
++typedef struct {
++  const char *label;
++  const char *format;
++} exp6_root_spec_t;
++
++static void exp6_stat_object(const char *title_id,
++                             const char *root_label,
++                             const char *leaf_label,
++                             const char *path) {
++  struct stat st;
++  memset(&st, 0, sizeof(st));
++  int rc = lstat(path, &st);
++  int err = rc == 0 ? 0 : errno;
++  const char *kind = "unavailable";
++  if (rc == 0) {
++    kind = S_ISREG(st.st_mode) ? "regular" :
++           S_ISDIR(st.st_mode) ? "directory" :
++           S_ISLNK(st.st_mode) ? "symlink" : "other";
++  }
++  log_debug("  [PS4-TROPHY-EXP6] title=%s phase=sandbox-ready "
++            "root=%s file=%s kind=%s size=%lld mode=0%o errno=%d",
++            title_id, root_label, leaf_label, kind,
++            rc == 0 ? (long long)st.st_size : -1LL,
++            rc == 0 ? (unsigned)(st.st_mode & 07777u) : 0u, err);
++}
++
++static void exp6_metadata_namespace_probe(const char *title_id) {
++  if (!exp5_is_cusa(title_id))
++    return;
++
++  int saved_errno = errno;
++  static const exp6_root_spec_t roots[] = {
++      {"sandbox-app0-sce-sys",
++       "/mnt/sandbox/%s_000/app0/sce_sys"},
++      {"system-ex-app-sce-sys",
++       "/system_ex/app/%s/sce_sys"},
++      {"user-app-sce-sys",
++       "/user/app/%s/sce_sys"},
++      {"user-appmeta",
++       "/user/appmeta/%s"},
++      {"system-priv-appmeta",
++       "/system_data/priv/appmeta/%s"}};
++  static const char *const leaves[] = {
++      "param.sfo", "npbind.dat", "nptitle.dat",
++      "trophy/trophy00.trp"};
++  char root[MAX_PATH];
++  char file[MAX_PATH];
++
++  log_debug("  [PS4-TROPHY-EXP6] title=%s phase=sandbox-ready "
++            "probe=metadata-namespace mode=readonly", title_id);
++
++  for (size_t i = 0; i < sizeof(roots) / sizeof(roots[0]); ++i) {
++    int n = snprintf(root, sizeof(root), roots[i].format, title_id);
++    if (n < 0 || (size_t)n >= sizeof(root)) {
++      log_debug("  [PS4-TROPHY-EXP6] title=%s root=%s "
++                "path-too-long=1", title_id, roots[i].label);
++      continue;
++    }
++    exp6_stat_object(title_id, roots[i].label, "(directory)", root);
++    for (size_t j = 0; j < sizeof(leaves) / sizeof(leaves[0]); ++j) {
++      if (!exp5_join(file, sizeof(file), root, leaves[j])) {
++        log_debug("  [PS4-TROPHY-EXP6] title=%s root=%s "
++                  "file=%s path-too-long=1",
++                  title_id, roots[i].label, leaves[j]);
++        continue;
++      }
++      exp6_stat_object(title_id, roots[i].label, leaves[j], file);
++    }
++  }
++  log_debug("  [PS4-TROPHY-EXP6] title=%s phase=sandbox-ready "
++            "snapshot=complete roots=%u",
++            title_id, (unsigned)(sizeof(roots) / sizeof(roots[0])));
++  errno = saved_errno;
++}
++
+ static int handle_launch_request(const char *title_id) {
+   exp5_phase_snapshot(title_id, "launch-request", -1);
+   pthread_mutex_lock(&g_service.mutex);
+@@ -989,7 +1071,8 @@
+   if (effective_title_id[0] == '\0' || already_handled)
+     return 0;
+   exp5_phase_snapshot(effective_title_id, "sandbox-ready", 0);
++  exp6_metadata_namespace_probe(effective_title_id);
+ 
+   errno = 0;
+   bool package_ready =
