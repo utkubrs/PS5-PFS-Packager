@@ -1,0 +1,153 @@
+diff --git a/src/sm_game_lifecycle.c b/src/sm_game_lifecycle.c
+--- a/src/sm_game_lifecycle.c
++++ b/src/sm_game_lifecycle.c
+@@ -401,9 +401,138 @@
+   log_debug("  [GAME] process handoff: %s app_id=0x%08X pid=%ld -> pid=%ld",
+             title_id, effective_app_id, (long)old_pid, (long)pid);
+   return true;
+ }
+ 
++
++/*
++ * EXP4 read-only PS4 launch snapshot.
++ * Inspects existing OS mount-table entries and file existence only.
++ * This does not intercept LNC, touch NPDRM keys, copy trophy files,
++ * write app.db, mount/unmount images, or change launch behavior.
++ */
++static bool exp4_valid_cusa(const char *title_id) {
++  if (!title_id || strlen(title_id) != 9 ||
++      strncmp(title_id, "CUSA", 4) != 0)
++    return false;
++  for (int i = 4; i < 9; ++i) {
++    if (title_id[i] < '0' || title_id[i] > '9')
++      return false;
++  }
++  return true;
++}
++
++static bool exp4_path2(char *buffer, size_t capacity,
++                       const char *base, const char *part) {
++  int n = snprintf(buffer, capacity, "%s/%s", base, part);
++  return n >= 0 && (size_t)n < capacity;
++}
++
++static void exp4_stat_mount(const char *title_id,
++                            const char *label, const char *path) {
++  struct statfs fs;
++  if (statfs(path, &fs) != 0) {
++    log_debug("  [PS4-TROPHY-EXP4] title=%s stage=game-start "
++              "probe=%s status=unavailable errno=%d",
++              title_id, label, errno);
++    return;
++  }
++  log_debug("  [PS4-TROPHY-EXP4] title=%s stage=game-start probe=%s "
++            "fs=%.*s mounted-on=%.*s from=%.*s flags=0x%llX",
++            title_id, label,
++            48, fs.f_fstypename, 190, fs.f_mntonname,
++            190, fs.f_mntfromname, (unsigned long long)fs.f_flags);
++}
++
++static void exp4_metadata_probe(const char *title_id, const char *label,
++                                const char *root) {
++  static const char *const relative_files[] = {
++      "param.sfo", "npbind.dat", "nptitle.dat", "trophy/trophy00.trp"};
++  char file[MAX_PATH];
++  for (size_t i = 0;
++       i < sizeof(relative_files) / sizeof(relative_files[0]); ++i) {
++    if (!exp4_path2(file, sizeof(file), root, relative_files[i]))
++      continue;
++    struct stat st;
++    int rc = lstat(file, &st);
++    int present = rc == 0 && S_ISREG(st.st_mode) ? 1 : 0;
++    int error = rc != 0 && errno != ENOENT ? errno : 0;
++    log_debug("  [PS4-TROPHY-EXP4] title=%s metadata=%s "
++              "file=%s regular=%d errno=%d",
++              title_id, label, relative_files[i], present, error);
++  }
++}
++
++static void exp4_mount_table_probe(const char *title_id) {
++  struct statfs *table = NULL;
++  int count = sm_mount_table_snapshot(&table);
++  if (count < 0) {
++    log_debug("  [PS4-TROPHY-EXP4] title=%s mount-snapshot=unavailable errno=%d",
++              title_id, errno);
++    return;
++  }
++  int matches = 0;
++  int printed = 0;
++  for (int i = 0; i < count; ++i) {
++    const struct statfs *entry = &table[i];
++    /* Only mounts referring to this PS4 title; no unrelated paths. */
++    if (!strstr(entry->f_mntonname, title_id) &&
++        !strstr(entry->f_mntfromname, title_id))
++      continue;
++    ++matches;
++    if (printed >= 24)
++      continue;
++    ++printed;
++    log_debug("  [PS4-TROPHY-EXP4] title=%s mount=%d type=%.*s "
++              "on=%.*s from=%.*s flags=0x%llX",
++              title_id, printed, 48, entry->f_fstypename,
++              190, entry->f_mntonname, 190, entry->f_mntfromname,
++              (unsigned long long)entry->f_flags);
++  }
++  log_debug("  [PS4-TROPHY-EXP4] title=%s mount-total=%d "
++            "matching=%d printed=%d truncated=%d",
++            title_id, count, matches, printed, matches > printed ? 1 : 0);
++  free(table);
++}
++
++static void exp4_snapshot_on_game_start(const char *title_id,
++                                        pid_t pid, uint32_t app_id) {
++  if (!exp4_valid_cusa(title_id))
++    return;
++  log_debug("  [PS4-TROPHY-EXP4] title=%s stage=game-start "
++            "pid=%ld app_id=0x%08X mode=readonly",
++            title_id, (long)pid, app_id);
++
++  char path[MAX_PATH], sandbox[MAX_PATH];
++  char source[MAX_PATH];
++  bool managed = read_mount_link(title_id, source, sizeof(source));
++  log_debug("  [PS4-TROPHY-EXP4] title=%s tracked-mount=%d source=%.*s",
++            title_id, managed ? 1 : 0, 190, managed ? source : "(none)");
++
++  if (snprintf(sandbox, sizeof(sandbox), "/mnt/sandbox/%s_000",
++               title_id) >= (int)sizeof(sandbox))
++    return;
++  if (exp4_path2(path, sizeof(path), sandbox, "app0"))
++    exp4_stat_mount(title_id, "sandbox-app0", path);
++  if (exp4_path2(path, sizeof(path), sandbox, "parent/app0"))
++    exp4_stat_mount(title_id, "sandbox-parent-app0", path);
++  if (snprintf(path, sizeof(path), "/system_ex/app/%s",
++               title_id) < (int)sizeof(path))
++    exp4_stat_mount(title_id, "system-ex-title", path);
++
++  exp4_mount_table_probe(title_id);
++  if (snprintf(path, sizeof(path), "/user/appmeta/%s",
++               title_id) < (int)sizeof(path))
++    exp4_metadata_probe(title_id, "user-appmeta", path);
++  if (snprintf(path, sizeof(path), "/user/app/%s/sce_sys",
++               title_id) < (int)sizeof(path))
++    exp4_metadata_probe(title_id, "user-app-sce-sys", path);
++  if (snprintf(path, sizeof(path), "/system_data/priv/appmeta/%s",
++               title_id) < (int)sizeof(path))
++    exp4_metadata_probe(title_id, "system-priv-appmeta", path);
++  log_debug("  [PS4-TROPHY-EXP4] title=%s snapshot=complete", title_id);
++}
++
+ static bool dispatch_game_launch(int kq, pid_t pid, uint64_t exec_time_us,
+                                  const char *title_id, uint32_t app_id) {
+   if (try_game_process_handoff(kq, pid, title_id, app_id))
+     return true;
+@@ -428,9 +557,10 @@
+             (long)pid, app_id);
+   if (title_id && strncmp(title_id, "CUSA", 4) == 0)
+     log_debug("  [PS4-TROPHY-EXP2A] game-check title=%s app_id=0x%08X",
+               title_id, app_id);
+   sm_appdb_exp2b_log_registration(title_id);
++  exp4_snapshot_on_game_start(title_id, pid, app_id);
+   bool new_game_process = atomic_load(&g_active_game_pid) != pid;
+   publish_active_game(pid, title_id, app_id);
+   if (new_game_process)
+     sm_mdbg_game_on_exec(pid, title_id, exec_time_us);
