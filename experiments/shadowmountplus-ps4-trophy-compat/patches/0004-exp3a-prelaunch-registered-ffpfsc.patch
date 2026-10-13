@@ -1,0 +1,89 @@
+diff --git a/src/sm_install.c b/src/sm_install.c
+--- a/src/sm_install.c
++++ b/src/sm_install.c
+@@ -354,8 +354,34 @@
+   log_debug("  [PS4-TROPHY-EXP3] title=%s copied=%u preserved=%u absent=%u errors=%u",
+             title_id, copied, preserved, absent, errors);
+ }
+ 
++/*
++ * EXP3A: also run on the ShellCore pre-launch path for ALREADY REGISTERED
++ * FFPFSC games. The install/remount-only EXP3 hook is bypassed otherwise.
++ * The underlying EXP3 mirror remains opt-in and add-only.
++ */
++void sm_install_exp3_launch_probe(const char *title_id,
++                                  const char *source_path) {
++  if (!exp3_ps4_title_id(title_id) || !source_path ||
++      !is_under_image_mount_base(source_path))
++    return;
++  char src_sce_sys[MAX_PATH], appmeta[MAX_PATH];
++  int a = snprintf(src_sce_sys, sizeof(src_sce_sys),
++                   "%s/sce_sys", source_path);
++  int b = snprintf(appmeta, sizeof(appmeta),
++                   "%s/%s", APPMETA_BASE, title_id);
++  if (a <= 0 || (size_t)a >= sizeof(src_sce_sys) ||
++      b <= 0 || (size_t)b >= sizeof(appmeta)) {
++    log_debug("  [PS4-TROPHY-EXP3A] invalid source/title path: %s",
++              title_id);
++    return;
++  }
++  log_debug("  [PS4-TROPHY-EXP3A] launch-prep title=%s source=%s",
++            title_id, source_path);
++  exp3_ps4_mirror_on_mount(title_id, src_sce_sys, appmeta);
++}
++
+ static void update_registered_title_snd0info(const char *title_id) {
+   sceKernelUsleep(200000);
+   int snd0_updates = update_snd0info(title_id);
+   if (snd0_updates >= 0)
+diff --git a/include/sm_install.h b/include/sm_install.h
+--- a/include/sm_install.h
++++ b/include/sm_install.h
+@@ -10,8 +10,12 @@
+ bool sm_install_register_title_dir(const char *title_id,
+                                    const char *install_dir,
+                                    int *result_out);
+ 
++// EXP3A: opted-in PS4 metadata mirror before FFPFSC title launch.
++void sm_install_exp3_launch_probe(const char *title_id,
++                                  const char *source_path);
++
+ // Install or remount the collected scan candidates.
+ void process_scan_candidates(const scan_candidate_t *candidates,
+                              int candidate_count);
+ 
+diff --git a/src/sm_shellcore_service.c b/src/sm_shellcore_service.c
+--- a/src/sm_shellcore_service.c
++++ b/src/sm_shellcore_service.c
+@@ -9,8 +9,9 @@
+ #include "sm_fakelib.h"
+ #include "sm_game_lifecycle.h"
+ #include "sm_gameinfo.h"
+ #include "sm_image.h"
++#include "sm_install.h"
+ #include "sm_limits.h"
+ #include "sm_log.h"
+ #include "sm_path_utils.h"
+ #include "sm_pkg_backport.h"
+@@ -413,8 +414,10 @@
+   if (!prepare_image_source(title_id, source_path,
+                             mount_read_only_override))
+     return false;
+   sm_fakelib_prepare_title_cache(title_id, source_path);
++    if (launch_request)
++      sm_install_exp3_launch_probe(title_id, source_path);
+   runtime_mount_state_lock();
+   bool title_mounted = !runtime_sleep_mode_active() &&
+                        mount_title_nullfs(title_id, source_path);
+   bool ready = title_mounted;
+@@ -461,8 +464,10 @@
+ 
+   errno = 0;
+   if (prepare_title_runtime(title_id, source_path,
+                             mount_read_only_override)) {
++    if (launch_request)
++      sm_install_exp3_launch_probe(title_id, source_path);
+     finish_prepared_title(title_id, false);
+     return 0;
+   }
+   int prepare_errno = errno;
