@@ -65,17 +65,19 @@ diff --git a/src/sm_shellcore_service.c b/src/sm_shellcore_service.c
  #include "sm_log.h"
  #include "sm_path_utils.h"
  #include "sm_pkg_backport.h"
-@@ -413,8 +414,10 @@
-   if (!prepare_image_source(title_id, source_path,
-                             mount_read_only_override))
-     return false;
-   sm_fakelib_prepare_title_cache(title_id, source_path);
+@@ -451,10 +452,12 @@
+       claim_prepared_title(title_id, launch_request, &claimed);
+   if (claim_status != 0)
+     return claim_status;
+   if (!claimed && is_data_mounted(title_id) &&
+       !mount_read_only_override) {
+     if (launch_request)
+       sm_fakelib_prepare_title_cache(title_id, source_path);
 +    if (launch_request)
 +      sm_install_exp3_launch_probe(title_id, source_path);
-   runtime_mount_state_lock();
-   bool title_mounted = !runtime_sleep_mode_active() &&
-                        mount_title_nullfs(title_id, source_path);
-   bool ready = title_mounted;
+     finish_prepared_title(title_id, false);
+     return 0;
+   }
 @@ -461,8 +464,10 @@
  
    errno = 0;
