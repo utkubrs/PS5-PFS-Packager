@@ -13,7 +13,7 @@ diff --git a/src/sm_install.c b/src/sm_install.c
  typedef int (*app_install_title_dir_fn_t)(const char *title_id,
                                            const char *install_path,
                                            void *reserved);
-@@ -177,8 +180,180 @@
+@@ -177,8 +180,182 @@
  
    return ok;
  }
@@ -196,7 +196,7 @@ diff --git a/src/sm_install.c b/src/sm_install.c
    sceKernelUsleep(200000);
    int snd0_updates = update_snd0info(title_id);
    if (snd0_updates >= 0)
-@@ -271,8 +446,10 @@
+@@ -271,8 +448,10 @@
    }
  
    if (!update_trophy_metadata(title_id, src_sce_sys))
