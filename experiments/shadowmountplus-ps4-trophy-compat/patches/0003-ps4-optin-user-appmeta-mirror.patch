@@ -1,0 +1,207 @@
+diff --git a/src/sm_install.c b/src/sm_install.c
+--- a/src/sm_install.c
++++ b/src/sm_install.c
+@@ -16,8 +16,11 @@
+ #include "sm_manual.h"
+ #include "sm_shellcore_hooks.h"
+ 
+ #include <dlfcn.h>
++#include <fcntl.h>
++#include <sys/stat.h>
++#include <unistd.h>
+ 
+ typedef int (*app_install_title_dir_fn_t)(const char *title_id,
+                                           const char *install_path,
+                                           void *reserved);
+@@ -177,8 +180,180 @@
+ 
+   return ok;
+ }
+ 
++
++/*
++ * EXP3 opt-in PS4 user-appmeta mirror.
++ * Only CUSA##### with a matching regular enable file is affected.
++ * All writes are add-only: O_EXCL, never replace existing metadata.
++ * This is a hypothesis test, not a native LNC/trophy registration fix.
++ */
++static int exp3_ps4_title_id(const char *id) {
++  if (!id || strlen(id) != 9 || strncmp(id, "CUSA", 4) != 0)
++    return 0;
++  for (int i = 4; i < 9; ++i)
++    if (id[i] < '0' || id[i] > '9')
++      return 0;
++  return 1;
++}
++
++static int exp3_format_path(char *out, size_t size,
++                            const char *root, const char *leaf) {
++  int n = snprintf(out, size, "%s/%s", root, leaf);
++  return n > 0 && (size_t)n < size ? 0 : -1;
++}
++
++static int exp3_regular_file(const char *path) {
++  struct stat st;
++  if (lstat(path, &st) != 0)
++    return errno == ENOENT ? 0 : -1;
++  return S_ISREG(st.st_mode) ? 1 : -1;
++}
++
++static int exp3_secure_dir(const char *path) {
++  struct stat st;
++  if (lstat(path, &st) != 0) {
++    if (errno != ENOENT)
++      return -1;
++    if (mkdir(path, 0755) != 0 && errno != EEXIST)
++      return -1;
++    if (lstat(path, &st) != 0)
++      return -1;
++  }
++  return S_ISDIR(st.st_mode) ? 0 : -1;
++}
++
++/* 0=absent, 1=copied, 2=preserved, -1=error. */
++static int exp3_copy_missing(const char *source_root,
++                              const char *dest_root, const char *leaf) {
++  char src[MAX_PATH], dst[MAX_PATH];
++  if (exp3_format_path(src, sizeof(src), source_root, leaf) != 0 ||
++      exp3_format_path(dst, sizeof(dst), dest_root, leaf) != 0)
++    return -1;
++  int exists = exp3_regular_file(src);
++  if (exists <= 0)
++    return exists; /* no source -> absent; unsafe source -> error */
++  exists = exp3_regular_file(dst);
++  if (exists != 0)
++    return exists > 0 ? 2 : -1;
++
++  int in = open(src, O_RDONLY | O_NOFOLLOW);
++  if (in < 0)
++    return -1;
++  struct stat st;
++  int valid = fstat(in, &st) == 0 && S_ISREG(st.st_mode) &&
++              st.st_size >= 0 && st.st_size <= 64 * 1024 * 1024;
++  if (!valid) {
++    (void)close(in);
++    return -1;
++  }
++  int out = open(dst, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0644);
++  if (out < 0) {
++    (void)close(in);
++    return errno == EEXIST && exp3_regular_file(dst) == 1 ? 2 : -1;
++  }
++  char buffer[16384];
++  int failed = 0;
++  size_t total = 0;
++  while (!failed) {
++    ssize_t got = read(in, buffer, sizeof(buffer));
++    if (got < 0) {
++      if (errno == EINTR)
++        continue;
++      failed = 1;
++      break;
++    }
++    if (got == 0)
++      break;
++    total += (size_t)got;
++    if (total > 64u * 1024u * 1024u) {
++      failed = 1;
++      break;
++    }
++    for (ssize_t off = 0; off < got;) {
++      ssize_t wrote = write(out, buffer + off, (size_t)(got - off));
++      if (wrote < 0 && errno == EINTR)
++        continue;
++      if (wrote <= 0) {
++        failed = 1;
++        break;
++      }
++      off += wrote;
++    }
++  }
++  if (close(in) != 0)
++    failed = 1;
++  if (close(out) != 0)
++    failed = 1;
++  if (failed) {
++    (void)unlink(dst); /* Only the file that this O_EXCL call created. */
++    return -1;
++  }
++  return 1;
++}
++
++static void exp3_ps4_mirror_on_mount(const char *title_id,
++                                     const char *src_sce_sys,
++                                     const char *user_appmeta_dir) {
++  if (!exp3_ps4_title_id(title_id))
++    return;
++
++  char marker[MAX_PATH], dst_trophy[MAX_PATH];
++  if (snprintf(marker, sizeof(marker),
++               "/data/shadowmount/exp3_%s.enable", title_id) >=
++      (int)sizeof(marker))
++    return;
++  int enabled = exp3_regular_file(marker) == 1;
++  log_debug("  [PS4-TROPHY-EXP3] title=%s enabled=%d user_appmeta=%s",
++            title_id, enabled, user_appmeta_dir);
++  if (!enabled)
++    return;
++
++  if (exp3_secure_dir(user_appmeta_dir) != 0 ||
++      exp3_format_path(dst_trophy, sizeof(dst_trophy),
++                       user_appmeta_dir, "trophy") != 0) {
++    log_debug("  [PS4-TROPHY-EXP3] title=%s invalid appmeta directory",
++              title_id);
++    return;
++  }
++
++  static const char *const files[] = {
++      "param.sfo", "npbind.dat", "nptitle.dat", "trophy/trophy00.trp"};
++  unsigned copied = 0, preserved = 0, absent = 0, errors = 0;
++  for (unsigned i = 0; i < sizeof(files) / sizeof(files[0]); ++i) {
++    /* Only make the trophy directory if a real source archive exists. */
++    if (i == 3) {
++      char source_trp[MAX_PATH];
++      if (exp3_format_path(source_trp, sizeof(source_trp), src_sce_sys,
++                           files[i]) != 0) {
++        errors++;
++        continue;
++      }
++      int present = exp3_regular_file(source_trp);
++      if (present == 0) {
++        absent++;
++        continue;
++      }
++      if (present < 0 || exp3_secure_dir(dst_trophy) != 0) {
++        errors++;
++        continue;
++      }
++    }
++    int status = exp3_copy_missing(src_sce_sys, user_appmeta_dir, files[i]);
++    if (status == 1)
++      copied++;
++    else if (status == 2)
++      preserved++;
++    else if (status == 0)
++      absent++;
++    else
++      errors++;
++  }
++  log_debug("  [PS4-TROPHY-EXP3] title=%s copied=%u preserved=%u absent=%u errors=%u",
++            title_id, copied, preserved, absent, errors);
++}
++
+ static void update_registered_title_snd0info(const char *title_id) {
+   sceKernelUsleep(200000);
+   int snd0_updates = update_snd0info(title_id);
+   if (snd0_updates >= 0)
+@@ -271,8 +446,10 @@
+   }
+ 
+   if (!update_trophy_metadata(title_id, src_sce_sys))
+     return false;
++  /* Exp3 runs on install and remount; marker enables add-only mirror. */
++  exp3_ps4_mirror_on_mount(title_id, src_sce_sys, user_appmeta_dir);
+ 
+   if (should_stop_requested() || runtime_sleep_mode_active())
+     return false;
+ 
