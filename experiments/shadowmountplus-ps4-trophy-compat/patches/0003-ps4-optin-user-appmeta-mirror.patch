@@ -177,6 +177,8 @@ diff --git a/src/sm_install.c b/src/sm_install.c
 +      }
 +    }
 +    int status = exp3_copy_missing(src_sce_sys, user_appmeta_dir, files[i]);
++    log_debug("  [PS4-TROPHY-EXP3] title=%s file=%s result=%d",
++              title_id, files[i], status);
 +    if (status == 1)
 +      copied++;
 +    else if (status == 2)
