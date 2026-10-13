@@ -14,9 +14,10 @@ probe=code[start:code.index("static void clear_tracked_game(",start)]
 for phrase in (
     "source=shared-sdk-log", "attribution=unverified",
     "api-return=unknown", "direct-trophy-api-captured=0",
-    "EXP7_MAX_REPORT_LINES 12u", "trophy-marker=1",
+    "trophy-marker=1",
     "summary=complete matched=%u", "candidate-hex-count=%u"):
     assert phrase in probe, f"missing attribution or safety label: {phrase}"
+assert "#define EXP7_MAX_REPORT_LINES 12u" in code
 assert "exp7_observe_sdk_line(line);" in code
 assert "exp7_log_summary();" in code
 assert "MDBG_MONITOR_WINDOW_US (60ull * 1000000ull)" in code
