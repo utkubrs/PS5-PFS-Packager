@@ -1,7 +1,9 @@
 diff --git a/src/sm_shellcore_service.c b/src/sm_shellcore_service.c
 --- a/src/sm_shellcore_service.c
 +++ b/src/sm_shellcore_service.c
-@@ -570,7 +570,89 @@
+@@ -572,10 +572,92 @@
+   log_debug("  [PS4-TROPHY-EXP5] title=%s phase=%s snapshot=complete",
+             title_id, phase);
    errno = saved_errno;
  }
  
@@ -90,7 +92,11 @@ diff --git a/src/sm_shellcore_service.c b/src/sm_shellcore_service.c
  static int handle_launch_request(const char *title_id) {
    exp5_phase_snapshot(title_id, "launch-request", -1);
    pthread_mutex_lock(&g_service.mutex);
-@@ -989,7 +1071,8 @@
+   g_service.pending_launch_title_id[0] = '\0';
+   g_service.pending_sandbox_ready_handled = false;
+@@ -988,10 +1070,11 @@
+   pthread_mutex_unlock(&g_service.mutex);
+ 
    if (effective_title_id[0] == '\0' || already_handled)
      return 0;
    exp5_phase_snapshot(effective_title_id, "sandbox-ready", 0);
@@ -98,3 +104,5 @@ diff --git a/src/sm_shellcore_service.c b/src/sm_shellcore_service.c
  
    errno = 0;
    bool package_ready =
+       sm_pkg_backport_on_sandbox_ready(effective_title_id);
+   int package_status = package_ready ? 0 : (errno != 0 ? errno : EIO);
