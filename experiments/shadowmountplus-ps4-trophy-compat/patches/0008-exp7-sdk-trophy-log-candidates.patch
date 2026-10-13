@@ -1,0 +1,158 @@
+diff --git a/src/sm_mdbg.c b/src/sm_mdbg.c
+--- a/src/sm_mdbg.c
++++ b/src/sm_mdbg.c
+@@ -85,9 +85,12 @@
+   uint64_t monitor_deadline_us;
+   uint64_t next_poll_us;
+   char title_id[MAX_TITLE_ID];
+   char rtld_error_prefix[MDBG_RTLD_ERROR_PREFIX_SIZE];
++  uint32_t exp7_matches;
++  uint32_t exp7_codes;
++  uint32_t exp7_reported;
+ } mdbg_game_state_t;
+ 
+ typedef struct {
+   bool privilege_probe_done;
+   bool privilege_ready;
+@@ -366,4 +369,123 @@
+   g_mdbg.log_snapshot_length = text_len;
+ }
+ 
++
++/*
++ * EXP7: passive, bounded SDK-log trophy marker diagnostics.
++ * sceKernelDebugGetSdkLogText is already polled by MDBG: this adds only
++ * a narrow parser for lines that MDBG has fetched during the game's
++ * existing 60-second observation window. Shared SDK log lines cannot be
++ * securely attributed to the active game. Hex values are CANDIDATES,
++ * never confirmed sceNpTrophyRegisterContext return codes.
++ * Never print a raw SDK line or sensitive trophy / NPDRM payload.
++ */
++#define EXP7_MAX_REPORT_LINES 12u
++
++static bool exp7_is_cusa(const char *title_id) {
++  if (!title_id || strlen(title_id) != 9 ||
++      strncmp(title_id, "CUSA", 4) != 0)
++    return false;
++  for (int i = 4; i < 9; ++i) {
++    if (title_id[i] < '0' || title_id[i] > '9')
++      return false;
++  }
++  return true;
++}
++
++static bool exp7_has_trophy_marker(const char *line) {
++  if (!line)
++    return false;
++  const char *needle = "trophy";
++  for (size_t i = 0; line[i] != '\0'; ++i) {
++    size_t j = 0;
++    while (needle[j] != '\0' && line[i + j] != '\0') {
++      unsigned char c = (unsigned char)line[i + j];
++      if (c >= 'A' && c <= 'Z')
++        c = (unsigned char)(c - 'A' + 'a');
++      if (c != (unsigned char)needle[j])
++        break;
++      ++j;
++    }
++    if (needle[j] == '\0')
++      return true;
++  }
++  return false;
++}
++
++static int exp7_hex_digit(unsigned char c) {
++  if (c >= '0' && c <= '9')
++    return (int)(c - '0');
++  if (c >= 'a' && c <= 'f')
++    return (int)(c - 'a') + 10;
++  if (c >= 'A' && c <= 'F')
++    return (int)(c - 'A') + 10;
++  return -1;
++}
++
++static bool exp7_find_hex8(const char *line, uint32_t *candidate) {
++  if (!line || !candidate)
++    return false;
++  size_t length = strlen(line);
++  for (size_t i = 0; i + 10u <= length; ++i) {
++    if (line[i] != '0' || (line[i+1] != 'x' && line[i+1] != 'X'))
++      continue;
++    uint32_t value = 0;
++    bool valid = true;
++    for (size_t j = 0; j < 8; ++j) {
++      int nibble = exp7_hex_digit((unsigned char)line[i + 2 + j]);
++      if (nibble < 0) {
++        valid = false;
++        break;
++      }
++      value = (value << 4) | (uint32_t)nibble;
++    }
++    if (valid && (i + 10u == length ||
++                  exp7_hex_digit((unsigned char)line[i + 10u]) < 0)) {
++      *candidate = value;
++      return true;
++    }
++  }
++  return false;
++}
++
++static void exp7_observe_sdk_line(const char *line) {
++  if (!g_mdbg.game.active || !exp7_is_cusa(g_mdbg.game.title_id) ||
++      !exp7_has_trophy_marker(line))
++    return;
++
++  if (g_mdbg.game.exp7_matches < UINT32_MAX)
++    ++g_mdbg.game.exp7_matches;
++  uint32_t candidate = 0;
++  bool found = exp7_find_hex8(line, &candidate);
++  if (found && g_mdbg.game.exp7_codes < UINT32_MAX)
++    ++g_mdbg.game.exp7_codes;
++  if (g_mdbg.game.exp7_reported >= EXP7_MAX_REPORT_LINES)
++    return;
++  ++g_mdbg.game.exp7_reported;
++
++  if (found) {
++    log_debug("  [PS4-TROPHY-EXP7] title=%s pid=%ld "
++              "source=shared-sdk-log trophy-marker=1 "
++              "candidate=0x%08X attribution=unverified api-return=unknown",
++              g_mdbg.game.title_id, (long)g_mdbg.game.pid, candidate);
++  } else {
++    log_debug("  [PS4-TROPHY-EXP7] title=%s pid=%ld "
++              "source=shared-sdk-log trophy-marker=1 "
++              "candidate=none attribution=unverified api-return=unknown",
++              g_mdbg.game.title_id, (long)g_mdbg.game.pid);
++  }
++}
++
++static void exp7_log_summary(void) {
++  if (!g_mdbg.game.active || !exp7_is_cusa(g_mdbg.game.title_id))
++    return;
++  log_debug("  [PS4-TROPHY-EXP7] title=%s pid=%ld "
++            "summary=complete matched=%u candidate-hex-count=%u "
++            "reported=%u source=shared-sdk-log "
++            "direct-trophy-api-captured=0",
++            g_mdbg.game.title_id, (long)g_mdbg.game.pid,
++            g_mdbg.game.exp7_matches, g_mdbg.game.exp7_codes,
++            g_mdbg.game.exp7_reported);
++}
++
+ static void clear_tracked_game(void) {
+@@ -370,5 +492,6 @@
++  exp7_log_summary();
+   memset(&g_mdbg.game, 0, sizeof(g_mdbg.game));
+   free_log_buffers();
+ }
+ 
+ static bool matches_tracked_rtld_error(const char *text) {
+@@ -491,9 +614,10 @@
+   append_fatal_error_detail(detail);
+ }
+ 
+ static void process_log_line(const char *line, uint64_t now_us) {
++  exp7_observe_sdk_line(line);
+   if (matches_tracked_rtld_error(line)) {
+     handle_game_failure(line, now_us, MDBG_FAILURE_RTLD);
+     return;
+   }
+ 
