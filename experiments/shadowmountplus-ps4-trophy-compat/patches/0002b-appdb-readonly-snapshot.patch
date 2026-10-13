@@ -1,0 +1,136 @@
+diff --git a/include/sm_appdb.h b/include/sm_appdb.h
+--- a/include/sm_appdb.h
++++ b/include/sm_appdb.h
+@@ -48,6 +48,8 @@
+                                size_t *count_out);
+ // Find one title in a snapshot sorted by title_id.
+ const sm_app_db_game_info_t *app_db_find_game_info(
+     const sm_app_db_game_info_t *entries, size_t count, const char *title_id);
+ 
++// EXP2B: read-only selected PS4 app.db fields at game launch.
++void sm_appdb_exp2b_log_registration(const char *title_id);
+ #endif
+diff --git a/src/sm_appdb.c b/src/sm_appdb.c
+--- a/src/sm_appdb.c
++++ b/src/sm_appdb.c
+@@ -725,5 +725,106 @@
+   }
+   return low < count && strcmp(entries[low].title_id, title_id) == 0
+              ? &entries[low]
+              : NULL;
+ }
++
++/*
++ * EXP2B: read-only, PS4-only application registration snapshot.
++ * No writes, app registration, trophy modifications, or system patches.
++ */
++static bool exp2b_column_allowed(const char *column) {
++  return strcmp(column, "platform") == 0 ||
++         strcmp(column, "contentLocation") == 0 ||
++         strcmp(column, "contentType") == 0 ||
++         strcmp(column, "category") == 0 ||
++         strcmp(column, "appType") == 0 ||
++         strcmp(column, "metaDataPath") == 0 ||
++         strcmp(column, "contentPath") == 0 ||
++         strcmp(column, "status") == 0;
++}
++
++static void exp2b_log_table(sqlite3 *db, const char *title_id,
++                            const char *table_name) {
++  const char *sql = strcmp(table_name, "tbl_contentinfo") == 0
++                        ? "SELECT * FROM tbl_contentinfo WHERE titleId=?1 LIMIT 1"
++                        : "SELECT * FROM tbl_appinfo WHERE titleId=?1 LIMIT 1";
++  sqlite3_stmt *stmt = NULL;
++  int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
++  if (rc != SQLITE_OK) {
++    log_debug("  [PS4-TROPHY-EXP2B] title=%s table=%s prepare_rc=%d",
++              title_id, table_name, rc);
++    return;
++  }
++  rc = sqlite3_bind_text(stmt, 1, title_id, -1, SQLITE_TRANSIENT);
++  if (rc != SQLITE_OK) {
++    (void)sqlite3_finalize(stmt);
++    return;
++  }
++  rc = sqlite3_step(stmt);
++  if (rc == SQLITE_ROW) {
++    log_debug("  [PS4-TROPHY-EXP2B] title=%s table=%s row=found",
++              title_id, table_name);
++    int count = sqlite3_column_count(stmt);
++    int logged = 0;
++    for (int i = 0; i < count; i++) {
++      const char *column = sqlite3_column_name(stmt, i);
++      if (!column || !exp2b_column_allowed(column))
++        continue;
++      int type = sqlite3_column_type(stmt, i);
++      if (type == SQLITE_INTEGER) {
++        log_debug("  [PS4-TROPHY-EXP2B] title=%s table=%s field=%s number=%lld",
++                  title_id, table_name, column,
++                  (long long)sqlite3_column_int64(stmt, i));
++        logged++;
++      } else if (type == SQLITE_TEXT) {
++        const unsigned char *value = sqlite3_column_text(stmt, i);
++        char safe[97] = {0};
++        if (value) {
++          for (size_t j = 0; j < sizeof(safe)-1 && value[j]; j++) {
++            unsigned char c = value[j];
++            safe[j] = ((c >= '0' && c <= '9') ||
++                       (c >= 'a' && c <= 'z') ||
++                       (c >= 'A' && c <= 'Z') ||
++                       c == '/' || c == '-' || c == '_' ||
++                       c == '.' || c == ':') ? (char)c : '?';
++          }
++        }
++        log_debug("  [PS4-TROPHY-EXP2B] title=%s table=%s field=%s text=%s",
++                  title_id, table_name, column, safe);
++        logged++;
++      }
++    }
++    if (!logged)
++      log_debug("  [PS4-TROPHY-EXP2B] title=%s table=%s selected_fields=none",
++                title_id, table_name);
++  } else {
++    log_debug("  [PS4-TROPHY-EXP2B] title=%s table=%s row=%s rc=%d",
++              title_id, table_name,
++              rc == SQLITE_DONE ? "missing" : "query-error", rc);
++  }
++  (void)sqlite3_finalize(stmt);
++}
++
++void sm_appdb_exp2b_log_registration(const char *title_id) {
++  if (!title_id || strlen(title_id) != 9 ||
++      strncmp(title_id, "CUSA", 4) != 0)
++    return;
++  for (int i = 4; i < 9; i++)
++    if (title_id[i] < '0' || title_id[i] > '9')
++      return;
++
++  sqlite3 *db = NULL;
++  int rc = sqlite3_open_v2(APP_DB_PATH, &db, SQLITE_OPEN_READONLY, NULL);
++  if (rc != SQLITE_OK) {
++    log_debug("  [PS4-TROPHY-EXP2B] title=%s appdb=open-failed rc=%d",
++              title_id, rc);
++    if (db)
++      sqlite3_close(db);
++    return;
++  }
++  (void)sqlite3_busy_timeout(db, 50);
++  log_debug("  [PS4-TROPHY-EXP2B] title=%s appdb=readonly", title_id);
++  exp2b_log_table(db, title_id, "tbl_contentinfo");
++  exp2b_log_table(db, title_id, "tbl_appinfo");
++  (void)sqlite3_close(db);
++}
+diff --git a/src/sm_game_lifecycle.c b/src/sm_game_lifecycle.c
+--- a/src/sm_game_lifecycle.c
++++ b/src/sm_game_lifecycle.c
+@@ -427,9 +427,10 @@
+   log_debug("  [GAME] started: %s pid=%ld app_id=0x%08X", title_id,
+             (long)pid, app_id);
+   if (title_id && strncmp(title_id, "CUSA", 4) == 0)
+     log_debug("  [PS4-TROPHY-EXP2A] game-check title=%s app_id=0x%08X",
+               title_id, app_id);
++  sm_appdb_exp2b_log_registration(title_id);
+   bool new_game_process = atomic_load(&g_active_game_pid) != pid;
+   publish_active_game(pid, title_id, app_id);
+   if (new_game_process)
+     sm_mdbg_game_on_exec(pid, title_id, exec_time_us);
