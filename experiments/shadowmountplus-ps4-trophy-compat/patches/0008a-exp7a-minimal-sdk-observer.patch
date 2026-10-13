@@ -1,0 +1,86 @@
+diff --git a/src/sm_mdbg.c b/src/sm_mdbg.c
+--- a/src/sm_mdbg.c
++++ b/src/sm_mdbg.c
+@@ -489,11 +489,82 @@
+   char detail[64];
+   snprintf(detail, sizeof(detail), "%s: 0x%016" PRIx64, name, address);
+   append_fatal_error_detail(detail);
+ }
+ 
++
++/*
++ * EXP7A: minimal passive SDK-log marker observer.
++ * MDBG already fetches this shared log. No new hook, no changes to
++ * sm_mdbg_state_t, no raw log contents, no writes except existing log_debug.
++ * Avoid emitting "trophy" in EXP7A output to prevent feedback matches.
++ * Numeric matches are NOT direct sceNpTrophyRegisterContext return values.
++ */
++static pid_t g_exp7a_pid;
++static unsigned g_exp7a_reported;
++
++static int exp7a_hex(unsigned char c) {
++  if (c >= '0' && c <= '9')
++    return (int)(c - '0');
++  if (c >= 'a' && c <= 'f')
++    return (int)(c - 'a') + 10;
++  if (c >= 'A' && c <= 'F')
++    return (int)(c - 'A') + 10;
++  return -1;
++}
++
++static bool exp7a_code(const char *line, uint32_t *out) {
++  if (!line || !out)
++    return false;
++  for (const char *p = line; *p; ++p) {
++    if (p[0] != '0' || (p[1] != 'x' && p[1] != 'X'))
++      continue;
++    uint32_t value = 0;
++    int j = 0;
++    for (; j < 8 && p[2 + j]; ++j) {
++      int digit = exp7a_hex((unsigned char)p[2 + j]);
++      if (digit < 0)
++        break;
++      value = (value << 4) | (uint32_t)digit;
++    }
++    if (j == 8 && exp7a_hex((unsigned char)p[10]) < 0) {
++      *out = value;
++      return true;
++    }
++  }
++  return false;
++}
++
++static void exp7a_observe(const char *line) {
++  if (!g_mdbg.game.active || !line ||
++      strncmp(g_mdbg.game.title_id, "CUSA", 4) != 0)
++    return;
++  if (g_exp7a_pid != g_mdbg.game.pid) {
++    g_exp7a_pid = g_mdbg.game.pid;
++    g_exp7a_reported = 0;
++  }
++  if (g_exp7a_reported >= 8 ||
++      strstr(line, "[PS4-TROPHY-") != NULL)
++    return;
++  if (!strstr(line, "Trophy") && !strstr(line, "trophy") &&
++      !strstr(line, "TROPHY"))
++    return;
++  ++g_exp7a_reported;
++  uint32_t candidate = 0;
++  bool found = exp7a_code(line, &candidate);
++  if (found)
++    log_debug("  [PS4-EXP7A] title=%s pid=%ld sdk-marker=1 "
++              "candidate=0x%08X attribution=unverified api-return=unknown",
++              g_mdbg.game.title_id, (long)g_mdbg.game.pid, candidate);
++  else
++    log_debug("  [PS4-EXP7A] title=%s pid=%ld sdk-marker=1 "
++              "candidate=none attribution=unverified api-return=unknown",
++              g_mdbg.game.title_id, (long)g_mdbg.game.pid);
++}
++
+ static void process_log_line(const char *line, uint64_t now_us) {
++  exp7a_observe(line);
+   if (matches_tracked_rtld_error(line)) {
+     handle_game_failure(line, now_us, MDBG_FAILURE_RTLD);
+     return;
+   }
+ 
