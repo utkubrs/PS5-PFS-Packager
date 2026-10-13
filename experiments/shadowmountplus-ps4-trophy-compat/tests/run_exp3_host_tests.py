@@ -28,6 +28,10 @@ prefix = r"""
 #include <sys/types.h>
 #include <unistd.h>
 #define MAX_PATH 1024
+#define APPMETA_BASE "/tmp/exp3-appmeta"
+static int is_under_image_mount_base(const char *path) {
+  return strncmp(path, "/mnt/shadowmnt/", 15) == 0;
+}
 static void log_debug(const char *fmt, ...) {(void)fmt;}
 """
 suffix = r"""
