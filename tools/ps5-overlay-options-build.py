@@ -241,7 +241,7 @@ web = replace_one(web, "Katman yönetimi ve görünüm ayarları",
                   "Katman yönetimi ve görünüm ayarları — OPTIONS 2 sn basılı tutarak aç/kapat",
                   "hotkey instructions")
 
-const quickPanel = r'''
+quickPanel = r'''
   <div class="card" id="quickToggleCard">
     <div class="card-header">
       <div class="card-title">🎮 FPS Göster / Gizle</div>
