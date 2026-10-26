@@ -112,8 +112,8 @@ static bool poll_options_long_press(void) {
 '''
 main = replace_one(main, "bool has_hv_bypass = false;", "bool has_hv_bypass = false;\n" + hook, "insert controller poll")
 build_call = "build_hud(Root_Domain, pui_img, widget_class, panel_class, label_class, root_widget, &hud_ctx);"
-if main.count(build_call) != 3:
-    raise RuntimeError("Expected exactly three HUD build call sites in v1.0.19")
+if main.count(build_call) != 2:
+    raise RuntimeError("Expected exactly two HUD build call sites in v1.0.19")
 main = main.replace(build_call, "if (g_options_overlay_visible) " + build_call)
 end_loop = r'''        sleep(1);
     }
