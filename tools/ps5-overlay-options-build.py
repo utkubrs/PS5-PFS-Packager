@@ -153,7 +153,7 @@ web = replace_one(web, "window.addEventListener('DOMContentLoaded', () => {\n  b
                   quickJS + "window.addEventListener('DOMContentLoaded', () => {\n  bindControls();\n  loadConfigFromServer();\n  refreshHudState();\n  setInterval(refreshHudState, 1500);",
                   "add client status polling")
 web = replace_one(web, '#include "web_server.hpp"',
-                  '#include "web_server.hpp"\\nextern volatile bool g_overlay_visible;',
+                  '#include "web_server.hpp"\nextern volatile bool g_overlay_visible;',
                   'visibility declaration')
 
 api = r'''
