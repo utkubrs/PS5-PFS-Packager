@@ -274,6 +274,7 @@ quickPanel = r'''
     </button>
     <p style="color:#8b9bb4;font-size:13px;margin-top:12px;">OPTIONS 2 saniye basılı tutma denemesi. Tuş algılanmazsa buradaki düğmeyi kullanabilirsiniz.</p>
     <div id="hotkeyDiag" style="color:#c7d4e6;font-size:13px;margin-top:8px;">Kontrolcü bağlantısı inceleniyor...</div>
+    <div id="hotkeyResolver" style="color:#7dd3fc;font-size:13px;margin-top:6px;">Modül ve fonksiyon tanılama bilgileri okunuyor...</div>
   </div>
 '''
 web = replace_one(web, '  <!-- Unload / Exit Overlay Card -->',
@@ -302,6 +303,17 @@ async function refreshHotkeyStatus() {
        ' · Tanıtıcı: ' + d.pad_handle;
     const b = document.getElementById('btnWebToggle');
     if (b) b.textContent = d.visible ? '🙈 Göstergeyi gizle' : '👁️ Göstergeyi aç';
+    try {
+      const q = await fetch('/api/hotkey-debug', {cache:'no-store'});
+      if (q.ok) {
+        const x = await q.json();
+        const y = document.getElementById('hotkeyResolver');
+        if (y) y.textContent = 'Deneme: ' + x.probes +
+          ' · PadMod: ' + x.pad_mod + ' · UserMod: ' + x.user_mod +
+          ' · Fonksiyonlar: ' + x.symbols +
+          ' · Kullanıcı: ' + x.user_id + ' · KullanıcıRC: ' + x.user_rc;
+      }
+    } catch(ex) {}
   } catch(e) {
     const el = document.getElementById('hotkeyDiag');
     if (el) el.textContent = 'Kontrolcü durumuna erişilemiyor';
@@ -334,6 +346,22 @@ extern volatile int g_hotkey_fg_user;
 extern volatile int g_hotkey_fg_rc;',
                   'status externs')
 api = r'''
+    if (strncmp(req, "GET /api/hotkey-debug", 21) == 0) {
+        char body[320];
+        int len = snprintf(body, sizeof(body),
+            "{\"probes\":%u,\"pad_mod\":%d,\"user_mod\":%d,\"symbols\":%d,\"user_id\":%d,\"user_rc\":%d}",
+            g_hotkey_probe_count, g_hotkey_pad_module, g_hotkey_user_module,
+            g_hotkey_symbol_mask, g_hotkey_fg_user, g_hotkey_fg_rc);
+        if (len < 0 || len >= (int)sizeof(body)) return;
+        char hdr[240];
+        int hlen = snprintf(hdr, sizeof(hdr),
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
+            "Cache-Control: no-store\r\nContent-Length: %d\r\nConnection: close\r\n\r\n", len);
+        socket_send_all(client_fd, hdr, hlen);
+        socket_send_all(client_fd, body, len);
+        return;
+    }
+
     if (strncmp(req, "GET /api/hotkey-status", 22) == 0) {
         char body[320];
         int len = snprintf(body, sizeof(body),
