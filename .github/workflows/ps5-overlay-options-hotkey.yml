@@ -1,8 +1,8 @@
-name: PS5 Overlay OPTIONS Debug v2 ELF
+name: PS5 Overlay OPTIONS Debug v3 ELF
 on:
   push:
     branches:
-      - ps5-overlay-options-debug-v2
+      - ps5-overlay-options-debug-v3
     paths:
       - 'tools/ps5-overlay-options-build.py'
       - '.github/workflows/ps5-overlay-options-hotkey.yml'
@@ -40,14 +40,14 @@ jobs:
           export PATH="/opt/ps5-payload-sdk/bin:/usr/lib/llvm-18/bin:$PATH"
           cd upstream
           make clean
-          make VERSION=v1.0.19-options-debug-v2
-          mkdir -p ../dist/ps5-overlay-options-debug-v2
-          cp bin/ps5-overlay-kus_v1.0.19-options-debug-v2.elf ../dist/ps5-overlay-options-debug-v2/PS5-Overlay-TR-OPTIONS-v1.0.19-Debug-v2.elf
-          sha256sum ../dist/ps5-overlay-options-debug-v2/*.elf > ../dist/ps5-overlay-options-debug-v2/SHA256SUMS.txt
+          make VERSION=v1.0.19-options-debug-v3
+          mkdir -p ../dist/ps5-overlay-options-debug-v3
+          cp bin/ps5-overlay-kus_v1.0.19-options-debug-v3.elf ../dist/ps5-overlay-options-debug-v3/PS5-Overlay-TR-OPTIONS-v1.0.19-Debug-v3.elf
+          sha256sum ../dist/ps5-overlay-options-debug-v3/*.elf > ../dist/ps5-overlay-options-debug-v3/SHA256SUMS.txt
       - name: Commit ELF to separate test branch
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -f dist/ps5-overlay-options-debug-v2/
-          git commit -m "Build PS5 Overlay Options debug v2 and web toggle" || exit 0
-          git push origin HEAD:ps5-overlay-options-debug-v2
+          git add -f dist/ps5-overlay-options-debug-v3/
+          git commit -m "Build PS5 Overlay Options debug v3 and resolver codes" || exit 0
+          git push origin HEAD:ps5-overlay-options-debug-v3
