@@ -48,6 +48,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add dist/ps5-overlay-options-hotkey-test/
+          git add -f dist/ps5-overlay-options-hotkey-test/
           git commit -m "Build PS5 Overlay v1.0.19 TR with OPTIONS long-press toggle" || exit 0
           git push origin HEAD:ps5-overlay-options-hotkey-test
