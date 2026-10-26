@@ -181,6 +181,94 @@ replacement_loop = r'''        // Poll OPTIONS ten times per second without spee
     return nullptr;
 }'''
 main = replace_one(main, end_loop, replacement_loop, "hotkey polling loop")
+
+# Experimental, user-triggered attempt to load ScePad and UserService into
+# the injected ShellUI process. NO automatic loading: explicit panel click.
+load_module_code = r'''
+// Explicit, one-time request from the web UI; keep normal overlay independent.
+volatile int g_hotkey_load_request = 0; // 0 idle, 1 requested, 2 busy, 3 done, 4 error
+volatile int g_hotkey_load_kernel_rc = -1;
+volatile int g_hotkey_load_sysmodule_rc = -1;
+volatile int g_hotkey_load_user_rc = -1;
+volatile int g_hotkey_load_pad_rc = -1;
+volatile int g_hotkey_loaded_user_handle = 0;
+volatile int g_hotkey_loaded_pad_handle = 0;
+
+static void try_load_pad_modules(void) {
+    if (g_hotkey_load_request != 1) return;
+    g_hotkey_load_request = 2;
+
+    typedef int (*module_load_t)(const char*, size_t, const void*, unsigned int, void*, int*);
+    typedef int (*sysmodule_load_t)(unsigned int);
+
+    uintptr_t kernel_base = 0;
+    int kernel_handle = get_module_handle(getpid(), "libkernel_sys.sprx", &kernel_base);
+    if (kernel_handle <= 0) kernel_handle = 0x2001;
+    module_load_t load_module =
+      (module_load_t)resolve_symbol(kernel_handle, kernel_base, "sceKernelLoadStartModule");
+    if (!load_module) {
+        g_hotkey_load_kernel_rc = -2;
+        g_hotkey_load_request = 4;
+        LOG_WARN("Controller module loader unavailable");
+        return;
+    }
+    g_hotkey_load_kernel_rc = kernel_handle;
+
+    uintptr_t sysbase = 0;
+    int sysh = get_module_handle(getpid(), "libSceSysmodule.sprx", &sysbase);
+    if (sysh <= 0) {
+        sysh = load_module("/system/common/lib/libSceSysmodule.sprx", 0, nullptr, 0, nullptr, nullptr);
+    }
+    g_hotkey_load_sysmodule_rc = sysh;
+    if (sysh > 0) {
+        sysmodule_load_t load_internal =
+          (sysmodule_load_t)resolve_symbol(sysh, sysbase, "sceSysmoduleLoadModuleInternal");
+        if (load_internal) {
+            // IDs are taken from the PS5 payload SDK module table.
+            int urc = load_internal(0x80000011u);
+            int prc = load_internal(0x80000024u);
+            LOG_INFO("sceSysmoduleLoadModuleInternal: user=%x pad=%x", urc, prc);
+        }
+    }
+
+    uintptr_t pad_base = 0, user_base = 0;
+    int existing_user = get_module_handle(getpid(), "libSceUserService.sprx", &user_base);
+    int existing_pad = get_module_handle(getpid(), "libScePad.sprx", &pad_base);
+
+    int user_result = existing_user > 0 ? existing_user :
+      load_module("/system/common/lib/libSceUserService.sprx", 0, nullptr, 0, nullptr, nullptr);
+    int pad_result = existing_pad > 0 ? existing_pad :
+      load_module("/system/common/lib/libScePad.sprx", 0, nullptr, 0, nullptr, nullptr);
+
+    g_hotkey_load_user_rc = user_result;
+    g_hotkey_load_pad_rc = pad_result;
+    if (user_result > 0) g_hotkey_loaded_user_handle = user_result;
+    if (pad_result > 0) g_hotkey_loaded_pad_handle = pad_result;
+
+    g_hotkey_load_request = (user_result > 0 && pad_result > 0) ? 3 : 4;
+    LOG_INFO("Pad load attempt: sysmodule=%d user=%d pad=%d status=%d",
+             sysh, user_result, pad_result, g_hotkey_load_request);
+}
+'''
+old = "volatile int g_hotkey_fg_rc = 0;"
+if main.count(old) != 1: raise RuntimeError("V4 insertion marker missing")
+main = main.replace(old, old + "\n" + load_module_code, 1)
+
+old = '        if (pad_mod <= 0 || user_mod <= 0) g_hotkey_stage = 2;'
+new = '''        if (pad_mod <= 0 && g_hotkey_loaded_pad_handle > 0)
+            pad_mod = g_hotkey_loaded_pad_handle;
+        if (user_mod <= 0 && g_hotkey_loaded_user_handle > 0)
+            user_mod = g_hotkey_loaded_user_handle;
+        g_hotkey_pad_module = pad_mod;
+        g_hotkey_user_module = user_mod;
+        if (pad_mod <= 0 || user_mod <= 0) g_hotkey_stage = 2;'''
+if main.count(old) != 1: raise RuntimeError("V4 handle marker missing")
+main = main.replace(old, new, 1)
+old = '        for (int hotkey_tick = 0; hotkey_tick < 10; ++hotkey_tick) {'
+new = '        try_load_pad_modules();\n' + old
+if main.count(old) != 1: raise RuntimeError("V4 polling marker missing")
+main = main.replace(old, new, 1)
+
 main_file.write_text(main, encoding="utf-8")
 
 loader = loader_file.read_text(encoding="utf-8")
@@ -382,6 +470,83 @@ api = r'''
 
 '''
 web = replace_one(web, '    if (strncmp(req, "GET /api/config", 15) == 0) {',api+'    if (strncmp(req, "GET /api/config", 15) == 0) {','hotkey APIs')
+
+# Display an opt-in module-load experiment and error codes separately.
+extra_button = r'''
+    <button id="btnTryModules" type="button" onclick="tryControllerModules()"
+      style="display:block;width:100%;margin-top:10px;padding:12px;border:1px solid #f59e0b;border-radius:10px;background:#29231b;color:#fbbf24;font-weight:600;">
+       Deneysel: Kontrolcü modüllerini yüklemeyi dene
+    </button>
+    <div id="moduleLoadInfo" style="color:#fbbf24;font-size:13px;margin-top:8px;">Modül yükleme henüz denenmedi.</div>
+'''
+old = '    <div id="hotkeyResolver"'
+if web.count(old) != 1: raise RuntimeError("missing diagnostic box")
+web = web.replace(old, extra_button+old,1)
+js = r'''
+async function tryControllerModules() {
+  if (!confirm('Bu işlem PS5 sistem arayüzüne kontrolcü kütüphanelerini yüklemeyi dener. Deneyseldir ve SceShellUI yeniden başlatılabilir. Devam edilsin mi?')) return;
+  const b = document.getElementById('btnTryModules');
+  if (b) b.disabled = true;
+  try {
+    const r = await fetch('/api/hotkey-load', {method: 'POST'});
+    if (!r.ok) throw new Error(r.status);
+    setTimeout(refreshHotkeyStatus, 1500);
+  } catch(ex) {
+    showToast('Modül yükleme isteği gönderilemedi');
+    if (b) b.disabled = false;
+  }
+}
+'''
+old = 'async function toggleHudWeb() {'
+if web.count(old) != 1: raise RuntimeError("missing JS web toggle")
+web = web.replace(old, js + old, 1)
+old = '''        if (y) y.textContent = 'Deneme: ' + x.probes +'''
+new = '''        const m = document.getElementById('moduleLoadInfo');
+        const statuses = {0:'Henüz denenmedi',1:'İstek alındı',2:'Yükleniyor',3:'Kütüphaneler yüklendi',4:'Yükleme başarısız'};
+        if (m) m.textContent = 'Yükleme: ' + (statuses[x.load_state] || x.load_state) +
+          ' · Kernel: ' + x.kernel_rc + ' · Sysmodule: ' + x.sysmodule_rc +
+          ' · User: ' + x.load_user_rc + ' · Pad: ' + x.load_pad_rc;
+        const bt = document.getElementById('btnTryModules');
+        if (bt) bt.disabled = x.load_state !== 0;
+        if (y) y.textContent = 'Deneme: ' + x.probes +'''
+if web.count(old) != 1: raise RuntimeError("missing debug JS")
+web = web.replace(old, new, 1)
+
+old = 'extern volatile int g_hotkey_fg_rc;'
+new = old + '''\nextern volatile int g_hotkey_load_request;
+extern volatile int g_hotkey_load_kernel_rc;
+extern volatile int g_hotkey_load_sysmodule_rc;
+extern volatile int g_hotkey_load_user_rc;
+extern volatile int g_hotkey_load_pad_rc;'''
+if web.count(old) != 1: raise RuntimeError("missing debug declarations")
+web = web.replace(old, new, 1)
+old = 'char body[320];'
+# Only change the first body inside debug GET, not other endpoints.
+start = web.index('if (strncmp(req, "GET /api/hotkey-debug"')
+end = web.index('if (strncmp(req, "GET /api/hotkey-status"', start)
+section = web[start:end]
+section = section.replace('char body[320];', 'char body[512];', 1)
+section = section.replace('''"{\\"probes\\":%u,\\"pad_mod\\":%d,\\"user_mod\\":%d,\\"symbols\\":%d,\\"user_id\\":%d,\\"user_rc\\":%d}",''',
+''' "{\\"probes\\":%u,\\"pad_mod\\":%d,\\"user_mod\\":%d,\\"symbols\\":%d,\\"user_id\\":%d,\\"user_rc\\":%d,"
+            "\\"load_state\\":%d,\\"kernel_rc\\":%d,\\"sysmodule_rc\\":%d,\\"load_user_rc\\":%d,\\"load_pad_rc\\":%d}",''', 1)
+section = section.replace('''g_hotkey_symbol_mask, g_hotkey_fg_user, g_hotkey_fg_rc);''',
+'''g_hotkey_symbol_mask, g_hotkey_fg_user, g_hotkey_fg_rc,
+            g_hotkey_load_request, g_hotkey_load_kernel_rc, g_hotkey_load_sysmodule_rc,
+            g_hotkey_load_user_rc, g_hotkey_load_pad_rc);''', 1)
+if "load_state" not in section: raise RuntimeError("V4 debug response edit failed")
+web = web[:start] + section + web[end:]
+api = r'''
+    if (strncmp(req, "POST /api/hotkey-load", 21) == 0) {
+        if (g_hotkey_load_request == 0) g_hotkey_load_request = 1;
+        const char resp[] = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{\"status\":\"queued\"}";
+        socket_send_all(client_fd, resp, sizeof(resp)-1);
+        return;
+    }
+'''
+old = '    if (strncmp(req, "GET /api/hotkey-debug", 21) == 0) {'
+if web.count(old) != 1: raise RuntimeError("missing v3 debug endpoint")
+web = web.replace(old, api+old, 1)
+
 web_file.write_text(web, encoding="utf-8")
 print("OK: OPTIONS diagnostics + web HUD toggle installed")
 web_file.write_text(web, encoding="utf-8")
