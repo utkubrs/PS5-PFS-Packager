@@ -337,13 +337,7 @@ web = replace_one(web, "window.addEventListener('DOMContentLoaded', () => {\n  b
                   quickJS + "window.addEventListener('DOMContentLoaded', () => {\n  bindControls();\n  loadConfigFromServer();\n  refreshHotkeyStatus();\n  setInterval(refreshHotkeyStatus, 1500);",
                   "add client status polling")
 web = replace_one(web, '#include "web_server.hpp"',
-                  '#include "web_server.hpp"\nextern volatile bool g_options_overlay_visible;\nextern volatile int g_hotkey_stage;\nextern volatile int g_hotkey_last_read;\nextern volatile int g_hotkey_handle;\nextern volatile unsigned int g_hotkey_buttons;\nextern volatile int g_hotkey_connected;
-extern volatile unsigned int g_hotkey_probe_count;
-extern volatile int g_hotkey_pad_module;
-extern volatile int g_hotkey_user_module;
-extern volatile int g_hotkey_symbol_mask;
-extern volatile int g_hotkey_fg_user;
-extern volatile int g_hotkey_fg_rc;',
+                  '#include "web_server.hpp"\nextern volatile bool g_options_overlay_visible;\nextern volatile int g_hotkey_stage;\nextern volatile int g_hotkey_last_read;\nextern volatile int g_hotkey_handle;\nextern volatile unsigned int g_hotkey_buttons;\nextern volatile int g_hotkey_connected;\nextern volatile unsigned int g_hotkey_probe_count;\nextern volatile int g_hotkey_pad_module;\nextern volatile int g_hotkey_user_module;\nextern volatile int g_hotkey_symbol_mask;\nextern volatile int g_hotkey_fg_user;\nextern volatile int g_hotkey_fg_rc;',
                   'status externs')
 api = r'''
     if (strncmp(req, "GET /api/hotkey-debug", 21) == 0) {
