@@ -1,0 +1,1 @@
+be654362f853e54a29b01e4e81c84bf93274f1dab0d8d1af9ef7b6df2b7c56ca  ../dist/ps5-overlay-options-hotkey-test/PS5-Overlay-TR-OPTIONS-v1.0.19-Test.elf
