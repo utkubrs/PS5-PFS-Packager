@@ -1,0 +1,53 @@
+name: PS5 Overlay OPTIONS Kısayol Test ELF
+on:
+  push:
+    branches:
+      - ps5-overlay-options-hotkey-test
+    paths:
+      - 'tools/ps5-overlay-options-build.py'
+      - '.github/workflows/ps5-overlay-options-hotkey.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install compiler and build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends git wget unzip make clang-18 lld-18 llvm-18 llvm-18-dev python3
+          sudo ln -sf /usr/bin/llvm-config-18 /usr/bin/llvm-config
+          sudo ln -sf /usr/bin/clang-18 /usr/bin/clang
+          sudo ln -sf /usr/bin/clang++-18 /usr/bin/clang++
+          sudo ln -sf /usr/bin/ld.lld-18 /usr/bin/ld.lld
+      - name: Install PS5 Payload SDK v0.43
+        run: |
+          wget -q https://github.com/ps5-payload-dev/sdk/releases/download/v0.43/ps5-payload-sdk.zip -O /tmp/ps5-payload-sdk.zip
+          sudo unzip -q /tmp/ps5-payload-sdk.zip -d /opt
+          echo "PS5_PAYLOAD_SDK=/opt/ps5-payload-sdk" >> "$GITHUB_ENV"
+          echo "LLVM_CONFIG=/usr/bin/llvm-config-18" >> "$GITHUB_ENV"
+          echo "/opt/ps5-payload-sdk/bin" >> "$GITHUB_PATH"
+      - name: Download fixed v1.0.19 source
+        run: |
+          git clone --quiet https://github.com/smoxa/ps5-new-overlay.git upstream
+          git -C upstream checkout --quiet v1.0.19
+      - name: Apply Turkish UI and OPTIONS toggle
+        run: python3 tools/ps5-overlay-options-build.py
+      - name: Compile complete ELF
+        run: |
+          export PATH="/opt/ps5-payload-sdk/bin:/usr/lib/llvm-18/bin:$PATH"
+          cd upstream
+          make clean
+          make VERSION=v1.0.19-options-tr
+          mkdir -p ../dist/ps5-overlay-options-hotkey-test
+          cp bin/ps5-overlay-kus_v1.0.19-options-tr.elf ../dist/ps5-overlay-options-hotkey-test/PS5-Overlay-TR-OPTIONS-v1.0.19-Test.elf
+          sha256sum ../dist/ps5-overlay-options-hotkey-test/*.elf > ../dist/ps5-overlay-options-hotkey-test/SHA256SUMS.txt
+      - name: Commit ELF to separate test branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dist/ps5-overlay-options-hotkey-test/
+          git commit -m "Build PS5 Overlay v1.0.19 TR with OPTIONS long-press toggle" || exit 0
+          git push origin HEAD:ps5-overlay-options-hotkey-test
