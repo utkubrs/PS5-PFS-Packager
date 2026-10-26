@@ -16,149 +16,15 @@ def replace_one(source, original, replacement, context):
 
 main = main_file.read_text(encoding="utf-8")
 hook = r'''
-// OPTIONS button = 0x00000008 in ScePadData on PS5.
-// Only reads input; does not intercept or modify the game's controller input.
-// Two seconds at 100 ms polling, triggered once per continuous hold.
-volatile bool g_options_overlay_visible = true;
-volatile int g_hotkey_stage = 0;
-volatile int g_hotkey_last_read = 0;
-volatile int g_hotkey_handle = -1;
-volatile unsigned int g_hotkey_buttons = 0;
-volatile int g_hotkey_connected = 0;
-
-static bool poll_options_long_press(void) {
-    typedef int (*pad_open_fn)(int, int, int, const void*);
-    typedef int (*pad_get_handle_fn)(int, int, int);
-    typedef int (*pad_read_fn)(int, void*);
-    typedef int (*user_fg_fn)(int*);
-
-    static pad_open_fn p_pad_open = nullptr;
-    static pad_get_handle_fn p_pad_get_handle = nullptr;
-    static pad_read_fn p_pad_read = nullptr;
-    static user_fg_fn p_user_fg = nullptr;
-    static int pad_handle = -1;
-    static unsigned int tick_retry = 0;
-    static unsigned int held_ticks = 0;
-    static bool fired_this_hold = false;
-    static bool init_logged = false;
-
-    if (!p_pad_read || !p_user_fg) {
-        g_hotkey_stage = 1;
-        if (++tick_retry < 50) return false;
-        tick_retry = 0;
-        uintptr_t pad_base = 0, user_base = 0;
-        int pad_mod = get_module_handle(getpid(), "libScePad.sprx", &pad_base);
-        int user_mod = get_module_handle(getpid(), "libSceUserService.sprx", &user_base);
-        if (pad_mod <= 0 || user_mod <= 0) g_hotkey_stage = 2;
-        if (pad_mod > 0 && user_mod > 0) {
-            p_pad_open = (pad_open_fn)resolve_symbol(pad_mod, pad_base, "scePadOpen");
-            p_pad_get_handle = (pad_get_handle_fn)resolve_symbol(pad_mod, pad_base, "scePadGetHandle");
-            p_pad_read = (pad_read_fn)resolve_symbol(pad_mod, pad_base, "scePadReadState");
-            p_user_fg = (user_fg_fn)resolve_symbol(user_mod, user_base, "sceUserServiceGetForegroundUser");
-        }
-        if (!p_pad_read || !p_user_fg || (!p_pad_open && !p_pad_get_handle)) {
-            if (g_hotkey_stage != 2) g_hotkey_stage = 3;
-            p_pad_read = nullptr;
-            p_user_fg = nullptr;
-            if (!init_logged) {
-                LOG_WARN("OPTIONS shortcut unavailable: Pad or UserService symbols not resolved");
-                init_logged = true;
-            }
-            return false;
-        }
-        LOG_INFO("OPTIONS long-press shortcut symbols available");
-    }
-
-    if (pad_handle < 0) {
-        g_hotkey_stage = 4;
-        if (++tick_retry < 10) return false;
-        tick_retry = 0;
-        int user_id = -1;
-        if (p_user_fg(&user_id) < 0 || user_id == -1) return false;
-        int h = p_pad_get_handle ? p_pad_get_handle(user_id, 0, 0) : -1;
-        if (h < 0 && p_pad_open) h = p_pad_open(user_id, 0, 0, nullptr);
-        if (h < 0) {
-            g_hotkey_stage = 5;
-            g_hotkey_handle = h;
-            if (!init_logged) {
-                LOG_WARN("OPTIONS shortcut pad handle unavailable: 0x%x", h);
-                init_logged = true;
-            }
-            return false;
-        }
-        pad_handle = h;
-        g_hotkey_handle = h;
-        LOG_INFO("OPTIONS shortcut pad opened: handle=0x%x", pad_handle);
-    }
-
-    unsigned char state[256] = {0};
-    int rc = p_pad_read(pad_handle, state);
-    g_hotkey_last_read = rc;
-    if (rc < 0) {
-        g_hotkey_stage = 6;
-        pad_handle = -1;
-        held_ticks = 0;
-        fired_this_hold = false;
-        return false;
-    }
-
-    uint32_t buttons = 0;
-    int connected = 0;
-    memcpy(&buttons, state + 0x00, sizeof(buttons));
-    memcpy(&connected, state + 0x4c, sizeof(connected));
-    g_hotkey_buttons = buttons;
-    g_hotkey_connected = connected;
-    g_hotkey_stage = 7;
-    bool options_pressed = connected != 0 && !(buttons & 0x80000000u) &&
-                           (buttons & 0x00000008u);
-
-    if (!options_pressed) {
-        held_ticks = 0;
-        fired_this_hold = false;
-        return false;
-    }
-    g_hotkey_stage = 8;
-    if (fired_this_hold) return false;
-    if (++held_ticks >= 20) {
-        g_hotkey_stage = 9;
-        fired_this_hold = true;
-        held_ticks = 0;
-        LOG_INFO("OPTIONS long-press detected");
-        return true;
-    }
-    return false;
-}
+// No controller hooks. Web UI is the only source of visibility toggles.
+volatile bool g_overlay_visible = true;
 '''
+
 main = replace_one(main, "bool has_hv_bypass = false;", "bool has_hv_bypass = false;\n" + hook, "insert controller poll")
 build_call = "build_hud(Root_Domain, pui_img, widget_class, panel_class, label_class, root_widget, &hud_ctx);"
 if main.count(build_call) != 2:
     raise RuntimeError("Expected exactly two HUD build call sites in v1.0.19")
-main = main.replace(build_call, "if (g_options_overlay_visible) " + build_call)
-end_loop = r'''        sleep(1);
-    }
-
-    return nullptr;
-}'''
-replacement_loop = r'''        // Poll OPTIONS ten times per second without speeding up the one-second
-        // telemetry sampling loop. Mono UI changes happen on this same thread.
-        for (int hotkey_tick = 0; hotkey_tick < 10; ++hotkey_tick) {
-            if (poll_options_long_press()) {
-                g_options_overlay_visible = !g_options_overlay_visible;
-                LOG_INFO("OPTIONS toggled overlay visible=%d", g_options_overlay_visible ? 1 : 0);
-                if (attached_to_game && root_widget) {
-                    destroy_hud(root_widget, &hud_ctx, widget_class);
-                    if (g_options_overlay_visible && g_config.enabled) {
-                        build_hud(Root_Domain, pui_img, widget_class, panel_class, label_class, root_widget, &hud_ctx);
-                    }
-                }
-            }
-            usleep(100000);
-        }
-    }
-
-    return nullptr;
-}'''
-main = replace_one(main, end_loop, replacement_loop, "hotkey polling loop")
+main = main.replace(build_call, "if (g_overlay_visible) " + build_call)
 main_file.write_text(main, encoding="utf-8")
 
 loader = loader_file.read_text(encoding="utf-8")
@@ -238,101 +104,81 @@ if re.search(r"[\u0400-\u04ff]", web):
     found = [line for line in web.splitlines() if re.search(r"[\u0400-\u04ff]", line)]
     raise RuntimeError("Remaining Cyrillic: " + repr(found[:3]))
 web = replace_one(web, "Katman yönetimi ve görünüm ayarları",
-                  "Katman yönetimi ve görünüm ayarları — OPTIONS 2 sn basılı tutarak aç/kapat",
+                  "Katman yönetimi ve görünüm ayarları",
                   "hotkey instructions")
 
 quickPanel = r'''
   <div class="card" id="quickToggleCard">
-    <div class="card-header">
-      <div class="card-title">🎮 FPS Göster / Gizle</div>
-    </div>
+    <div class="card-header"><div class="card-title">🎮 FPS Göster / Gizle</div></div>
     <button id="btnWebToggle" type="button" onclick="toggleHudWeb()"
-            style="display:block;width:100%;background:#0070d1;color:white;padding:13px;border:0;border-radius:10px;font-weight:bold;font-size:15px;">
-      🎮 Göstergeyi gizle
+      style="display:block;width:100%;background:#0070d1;color:white;padding:13px;border:0;border-radius:10px;font-weight:bold;font-size:15px;">
+      🙈 Göstergeyi gizle
     </button>
-    <p style="color:#8b9bb4;font-size:13px;margin-top:12px;">OPTIONS 2 saniye basılı tutma denemesi. Tuş algılanmazsa buradaki düğmeyi kullanabilirsiniz.</p>
-    <div id="hotkeyDiag" style="color:#c7d4e6;font-size:13px;margin-top:8px;">Kontrolcü bağlantısı inceleniyor...</div>
+    <p style="color:#8b9bb4;font-size:13px;margin-top:12px;">
+      FPS ve sıcaklık bilgilerini buradan açıp kapatabilirsiniz. Ölçümler ve ayarlar korunur.
+    </p>
   </div>
 '''
+
 web = replace_one(web, '  <!-- Unload / Exit Overlay Card -->',
                   quickPanel + '  <!-- Unload / Exit Overlay Card -->', 'add quick toggle panel')
 quickJS = r'''
-async function refreshHotkeyStatus() {
+async function refreshHudState() {
   try {
-    const r = await fetch('/api/hotkey-status', {cache: 'no-store'});
-    if (!r.ok) return;
-    const d = await r.json();
-    const labels = {
-      0:'Bekliyor', 1:'Modül çözümleme bekleniyor',
-      2:'Kontrolcü kitaplıkları bulunamadı',
-      3:'Kontrolcü fonksiyonları çözümlenemedi',
-      4:'Kontrolcü bağlantısı aranıyor',
-      5:'Kontrolcü tanıtıcısı alınamadı',
-      6:'Kontrolcü okuma hatası',
-      7:'Tuşlar okunuyor',
-      8:'OPTIONS algılandı; basılı tutuluyor',
-      9:'OPTIONS kısayolu tetiklendi'
-    };
-    const el = document.getElementById('hotkeyDiag');
-    if (el) el.textContent = 'Kontrolcü: ' + (labels[d.stage] || '?') +
-       ' · Tuş: 0x' + Number(d.buttons).toString(16).padStart(8,'0') +
-       ' · Bağlantı: ' + d.connected + ' · Okuma: ' + d.read_rc +
-       ' · Tanıtıcı: ' + d.pad_handle;
-    const b = document.getElementById('btnWebToggle');
-    if (b) b.textContent = d.visible ? '🙈 Göstergeyi gizle' : '👁️ Göstergeyi aç';
-  } catch(e) {
-    const el = document.getElementById('hotkeyDiag');
-    if (el) el.textContent = 'Kontrolcü durumuna erişilemiyor';
+    const res = await fetch('/api/hud-state', {cache:'no-store'});
+    if (!res.ok) throw new Error('HTTP '+res.status);
+    const data = await res.json();
+    const btn = document.getElementById('btnWebToggle');
+    if (btn) btn.textContent = data.visible ? '🙈 Göstergeyi gizle' : '👁️ Göstergeyi aç';
+  } catch(err) {
+    console.log('Gösterge durumu okunamadı', err);
   }
 }
 async function toggleHudWeb() {
-  const b = document.getElementById('btnWebToggle');
-  if (b) b.disabled = true;
+  const btn = document.getElementById('btnWebToggle');
+  if (btn) btn.disabled = true;
   try {
-    const r = await fetch('/api/toggle-hud', {method:'POST'});
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    await refreshHotkeyStatus();
-  } catch(e) {
+    const res = await fetch('/api/toggle-hud', {method:'POST'});
+    if (!res.ok) throw new Error('HTTP '+res.status);
+    await refreshHudState();
+  } catch(err) {
     showToast('Gösterge değiştirilemedi!');
   } finally {
-    if (b) b.disabled = false;
+    if (btn) btn.disabled = false;
   }
 }
 '''
+
 web = replace_one(web, "window.addEventListener('DOMContentLoaded', () => {\n  bindControls();\n  loadConfigFromServer();",
-                  quickJS + "window.addEventListener('DOMContentLoaded', () => {\n  bindControls();\n  loadConfigFromServer();\n  refreshHotkeyStatus();\n  setInterval(refreshHotkeyStatus, 1500);",
+                  quickJS + "window.addEventListener('DOMContentLoaded', () => {\n  bindControls();\n  loadConfigFromServer();\n  refreshHudState();\n  setInterval(refreshHudState, 1500);",
                   "add client status polling")
 web = replace_one(web, '#include "web_server.hpp"',
-                  '#include "web_server.hpp"\nextern volatile bool g_options_overlay_visible;\nextern volatile int g_hotkey_stage;\nextern volatile int g_hotkey_last_read;\nextern volatile int g_hotkey_handle;\nextern volatile unsigned int g_hotkey_buttons;\nextern volatile int g_hotkey_connected;',
-                  'status externs')
+                  '#include "web_server.hpp"\\nextern volatile bool g_overlay_visible;',
+                  'visibility declaration')
+
 api = r'''
-    if (strncmp(req, "GET /api/hotkey-status", 22) == 0) {
-        char body[320];
-        int len = snprintf(body, sizeof(body),
-            "{\"visible\":%s,\"stage\":%d,\"buttons\":%u,\"connected\":%d,\"read_rc\":%d,\"pad_handle\":%d}",
-            g_options_overlay_visible ? "true" : "false", g_hotkey_stage,
-            g_hotkey_buttons, g_hotkey_connected, g_hotkey_last_read, g_hotkey_handle);
-        if (len < 0 || len >= (int)sizeof(body)) return;
-        char hdr[240];
-        int hlen = snprintf(hdr, sizeof(hdr),
-            "HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\n"
-            "Cache-Control: no-store\r\nContent-Length: %d\r\nConnection: close\r\n\r\n", len);
-        socket_send_all(client_fd, hdr, hlen);
-        socket_send_all(client_fd, body, len);
+    if (strncmp(req, "GET /api/hud-state", 18) == 0) {
+        const char *json = g_overlay_visible ? "{\"visible\":true}" : "{\"visible\":false}";
+        char hdr[256];
+        int n = snprintf(hdr, sizeof(hdr),
+          "HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\n"
+          "Cache-Control: no-store\r\nContent-Length: %zu\r\nConnection: close\r\n\r\n",
+          strlen(json));
+        socket_send_all(client_fd, hdr, n);
+        socket_send_all(client_fd, json, strlen(json));
         return;
     }
-
     if (strncmp(req, "POST /api/toggle-hud", 20) == 0) {
-        g_options_overlay_visible = !g_options_overlay_visible;
+        g_overlay_visible = !g_overlay_visible;
         g_config_changed = true;
         const char resp[] = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{\"status\":\"ok\"}";
         socket_send_all(client_fd, resp, sizeof(resp)-1);
         return;
     }
-
 '''
+
 web = replace_one(web, '    if (strncmp(req, "GET /api/config", 15) == 0) {',api+'    if (strncmp(req, "GET /api/config", 15) == 0) {','hotkey APIs')
 web_file.write_text(web, encoding="utf-8")
-print("OK: OPTIONS diagnostics + web HUD toggle installed")
+print("OK: Turkish UI with web-only HUD toggle (no controller code).")
 web_file.write_text(web, encoding="utf-8")
-print("OK: OPTIONS long-press implementation + complete Turkish web interface applied.")
+
