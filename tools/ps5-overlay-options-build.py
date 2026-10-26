@@ -25,6 +25,12 @@ volatile int g_hotkey_last_read = 0;
 volatile int g_hotkey_handle = -1;
 volatile unsigned int g_hotkey_buttons = 0;
 volatile int g_hotkey_connected = 0;
+volatile unsigned int g_hotkey_probe_count = 0;
+volatile int g_hotkey_pad_module = 0;
+volatile int g_hotkey_user_module = 0;
+volatile int g_hotkey_symbol_mask = 0;
+volatile int g_hotkey_fg_user = -1;
+volatile int g_hotkey_fg_rc = 0;
 
 static bool poll_options_long_press(void) {
     typedef int (*pad_open_fn)(int, int, int, const void*);
@@ -43,19 +49,28 @@ static bool poll_options_long_press(void) {
     static bool init_logged = false;
 
     if (!p_pad_read || !p_user_fg) {
-        g_hotkey_stage = 1;
+        if (g_hotkey_stage == 0) g_hotkey_stage = 1;
         if (++tick_retry < 50) return false;
         tick_retry = 0;
+        g_hotkey_probe_count++;
         uintptr_t pad_base = 0, user_base = 0;
         int pad_mod = get_module_handle(getpid(), "libScePad.sprx", &pad_base);
+        if (pad_mod <= 0) pad_mod = get_module_handle(getpid(), "libScePad.prx", &pad_base);
         int user_mod = get_module_handle(getpid(), "libSceUserService.sprx", &user_base);
+        if (user_mod <= 0) user_mod = get_module_handle(getpid(), "libSceUserService.prx", &user_base);
+        g_hotkey_pad_module = pad_mod;
+        g_hotkey_user_module = user_mod;
         if (pad_mod <= 0 || user_mod <= 0) g_hotkey_stage = 2;
-        if (pad_mod > 0 && user_mod > 0) {
-            p_pad_open = (pad_open_fn)resolve_symbol(pad_mod, pad_base, "scePadOpen");
-            p_pad_get_handle = (pad_get_handle_fn)resolve_symbol(pad_mod, pad_base, "scePadGetHandle");
-            p_pad_read = (pad_read_fn)resolve_symbol(pad_mod, pad_base, "scePadReadState");
-            p_user_fg = (user_fg_fn)resolve_symbol(user_mod, user_base, "sceUserServiceGetForegroundUser");
+        int pad_lookup = pad_mod > 0 ? pad_mod : 0x2001;
+        int user_lookup = user_mod > 0 ? user_mod : 0x2001;
+        {
+            p_pad_open = (pad_open_fn)resolve_symbol(pad_lookup, pad_base, "scePadOpen");
+            p_pad_get_handle = (pad_get_handle_fn)resolve_symbol(pad_lookup, pad_base, "scePadGetHandle");
+            p_pad_read = (pad_read_fn)resolve_symbol(pad_lookup, pad_base, "scePadReadState");
+            p_user_fg = (user_fg_fn)resolve_symbol(user_lookup, user_base, "sceUserServiceGetForegroundUser");
         }
+        g_hotkey_symbol_mask = (p_pad_open ? 1 : 0) | (p_pad_get_handle ? 2 : 0) |
+                               (p_pad_read ? 4 : 0) | (p_user_fg ? 8 : 0);
         if (!p_pad_read || !p_user_fg || (!p_pad_open && !p_pad_get_handle)) {
             if (g_hotkey_stage != 2) g_hotkey_stage = 3;
             p_pad_read = nullptr;
@@ -70,11 +85,17 @@ static bool poll_options_long_press(void) {
     }
 
     if (pad_handle < 0) {
-        g_hotkey_stage = 4;
+        if (g_hotkey_stage < 4) g_hotkey_stage = 4;
         if (++tick_retry < 10) return false;
         tick_retry = 0;
         int user_id = -1;
-        if (p_user_fg(&user_id) < 0 || user_id == -1) return false;
+        int fg_rc = p_user_fg(&user_id);
+        g_hotkey_fg_user = user_id;
+        g_hotkey_fg_rc = fg_rc;
+        if (fg_rc < 0 || user_id == -1) {
+            g_hotkey_stage = 10;
+            return false;
+        }
         int h = p_pad_get_handle ? p_pad_get_handle(user_id, 0, 0) : -1;
         if (h < 0 && p_pad_open) h = p_pad_open(user_id, 0, 0, nullptr);
         if (h < 0) {
@@ -97,6 +118,7 @@ static bool poll_options_long_press(void) {
     if (rc < 0) {
         g_hotkey_stage = 6;
         pad_handle = -1;
+        g_hotkey_handle = -1;
         held_ticks = 0;
         fired_this_hold = false;
         return false;
@@ -271,7 +293,7 @@ async function refreshHotkeyStatus() {
       6:'Kontrolcü okuma hatası',
       7:'Tuşlar okunuyor',
       8:'OPTIONS algılandı; basılı tutuluyor',
-      9:'OPTIONS kısayolu tetiklendi'
+      9:'OPTIONS kısayolu tetiklendi', 10:'Aktif kullanıcı bulunamadı'
     };
     const el = document.getElementById('hotkeyDiag');
     if (el) el.textContent = 'Kontrolcü: ' + (labels[d.stage] || '?') +
@@ -303,7 +325,13 @@ web = replace_one(web, "window.addEventListener('DOMContentLoaded', () => {\n  b
                   quickJS + "window.addEventListener('DOMContentLoaded', () => {\n  bindControls();\n  loadConfigFromServer();\n  refreshHotkeyStatus();\n  setInterval(refreshHotkeyStatus, 1500);",
                   "add client status polling")
 web = replace_one(web, '#include "web_server.hpp"',
-                  '#include "web_server.hpp"\nextern volatile bool g_options_overlay_visible;\nextern volatile int g_hotkey_stage;\nextern volatile int g_hotkey_last_read;\nextern volatile int g_hotkey_handle;\nextern volatile unsigned int g_hotkey_buttons;\nextern volatile int g_hotkey_connected;',
+                  '#include "web_server.hpp"\nextern volatile bool g_options_overlay_visible;\nextern volatile int g_hotkey_stage;\nextern volatile int g_hotkey_last_read;\nextern volatile int g_hotkey_handle;\nextern volatile unsigned int g_hotkey_buttons;\nextern volatile int g_hotkey_connected;
+extern volatile unsigned int g_hotkey_probe_count;
+extern volatile int g_hotkey_pad_module;
+extern volatile int g_hotkey_user_module;
+extern volatile int g_hotkey_symbol_mask;
+extern volatile int g_hotkey_fg_user;
+extern volatile int g_hotkey_fg_rc;',
                   'status externs')
 api = r'''
     if (strncmp(req, "GET /api/hotkey-status", 22) == 0) {
