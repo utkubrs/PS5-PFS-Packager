@@ -296,7 +296,7 @@ jobs:
           $refs = @(gh api "repos/$env:GITHUB_REPOSITORY/git/matching-refs/tags" --jq '.[].ref')
           if ($LASTEXITCODE -ne 0) { throw 'Cannot list tag references' }
           foreach ($ref in $refs) {
-            if ($ref -match '^refs/tags/v\\d' -and $ref -ne 'refs/tags/v1.0') {
+            if ($ref -match '^refs/tags/v\d' -and $ref -ne 'refs/tags/v1.0') {
               $suffix = $ref.Substring('refs/'.Length)
               Write-Host "Deleting orphaned old version tag: $ref"
               gh api -X DELETE "repos/$env:GITHUB_REPOSITORY/git/refs/$suffix" | Out-Null
