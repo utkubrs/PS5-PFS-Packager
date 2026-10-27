@@ -1,5 +1,5 @@
 name: Build and publish Windows package
-# v1.0: consolidated portable release with one Markdown document.
+# v1.0 standalone EXE; publish and prune old release versions after smoke tests.
 
 on:
   pull_request:
@@ -10,6 +10,8 @@ on:
   push:
     branches: [main]
     paths:
+      - 'src/**'
+      - 'tests/**'
       - '.github/workflows/windows-release.yml'
   workflow_dispatch:
 
@@ -181,70 +183,124 @@ jobs:
           }
           Write-Host 'FFPFSC LAYOUT OK: CUSA12381.exfat -> sce_sys/param.json'
 
-      - name: Package compact portable ZIP (single EXE, one README)
+      - name: Stage portable v1.0 EXE and verify checksum
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $version = (Get-Content VERSION -Raw).Trim()
           if ($version -ne '1.0') { throw "Unexpected version: $version" }
-          $name = "PS5-PFS-Packager-v$version-Windows-x64"
-          $package = Join-Path 'release' 'PS5 PFS Packager'
-          New-Item -ItemType Directory -Force -Path $package | Out-Null
-          $exe = 'dist/ps5_pfs_packager.dist/PS5-PFS-Packager.exe'
-          if (!(Test-Path $exe)) { throw 'Compiled single-file EXE missing' }
-          Copy-Item $exe (Join-Path $package 'PS5-PFS-Packager.exe')
-          Copy-Item README.md (Join-Path $package 'README.md')
-          Copy-Item LICENSE (Join-Path $package 'LICENSE')
-          # pkgextract, MkPFS and Python runtime are already embedded in the EXE.
-          # Config file is generated next to the EXE when the user runs it.
-          Compress-Archive -Path $package -DestinationPath "release/$name.zip" -Force
-          $sha = (Get-FileHash "release/$name.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$sha  $name.zip" | Set-Content 'release/SHA256SUMS.txt' -Encoding ascii
-          if (!(Test-Path "release/$name.zip")) { throw "ZIP creation failed" }
+          New-Item -ItemType Directory -Force release | Out-Null
+          $source = 'dist/ps5_pfs_packager.dist/PS5-PFS-Packager.exe'
+          $releaseExe = "release/PS5-PFS-Packager-v$version-Windows-x64.exe"
+          if (!(Test-Path $source)) { throw 'Standalone onefile executable missing' }
+          Copy-Item $source $releaseExe -Force
+          $sourceHash = (Get-FileHash $source -Algorithm SHA256).Hash
+          $releaseHash = (Get-FileHash $releaseExe -Algorithm SHA256).Hash
+          if ($sourceHash -ne $releaseHash) { throw 'Release executable checksum mismatch' }
+          if ((Get-Item $releaseExe).Length -lt 1MB) { throw 'Executable looks truncated' }
+          Write-Host "EXE ready, SHA256: $releaseHash"
 
-      - name: Smoke test extracted v1.0 ZIP
+      - name: Smoke test final downloadable EXE
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $version = (Get-Content VERSION -Raw).Trim()
-          $zip = "release/PS5-PFS-Packager-v$version-Windows-x64.zip"
-          $dst = Join-Path $env:RUNNER_TEMP 'Installed Release With Spaces'
-          Expand-Archive $zip -DestinationPath $dst -Force
-          $package = Join-Path $dst 'PS5 PFS Packager'
-          $exe = Join-Path $package 'PS5-PFS-Packager.exe'
-          if (!(Test-Path $exe) -or !(Test-Path (Join-Path $package 'LICENSE'))) { throw 'Missing essential package files' }
-          $mds = @(Get-ChildItem $package -Recurse -Filter '*.md' -File)
-          if ($mds.Count -ne 1 -or $mds[0].Name -ne 'README.md') { throw 'ZIP must have exactly one Markdown document' }
-          $extra = @(Get-ChildItem $package -Recurse -File | Where-Object { $_.Extension -in @('.pyd','.dll') })
-          if ($extra.Count -gt 0) { throw 'ZIP contains loose Python/DLL runtime files' }
-          $log = Join-Path $env:RUNNER_TEMP 'pkgextract-final-zip-out.txt'
-          $err = Join-Path $env:RUNNER_TEMP 'pkgextract-final-zip-err.txt'
-          $proc = Start-Process -FilePath $exe -ArgumentList '--check-pkg-extractor' -RedirectStandardOutput $log -RedirectStandardError $err -PassThru -Wait
+          $exe = (Resolve-Path 'release/PS5-PFS-Packager-v1.0-Windows-x64.exe').Path
+          $isolated = Join-Path $env:RUNNER_TEMP 'Standalone Final With Spaces'
+          New-Item -ItemType Directory -Force $isolated | Out-Null
+          $target = Join-Path $isolated 'PS5-PFS-Packager.exe'
+          Copy-Item $exe $target
+          $log = Join-Path $env:RUNNER_TEMP 'final-exe-test.log'
+          $err = Join-Path $env:RUNNER_TEMP 'final-exe-test.err'
+          $proc = Start-Process -FilePath $target -ArgumentList '--check-pkg-extractor' -RedirectStandardOutput $log -RedirectStandardError $err -PassThru -Wait
           $output = (Get-Content $log -Raw -ErrorAction SilentlyContinue) + (Get-Content $err -Raw -ErrorAction SilentlyContinue)
           Write-Host $output
-          if ($proc.ExitCode -ne 0 -or $output -notmatch 'PKG_EXTRACTOR_OK:') { throw "Bundled extractor test failed: $($proc.ExitCode)" }
-          Write-Host "ZIP layout OK: PS5 PFS Packager/{EXE,README.md,LICENSE}"
+          if ($proc.ExitCode -ne 0 -or $output -notmatch 'PKG_EXTRACTOR_OK:') {
+            throw "Standalone EXE failed bundled PKG extractor check: $($proc.ExitCode)"
+          }
 
       - uses: actions/upload-artifact@v4
         with:
-          name: PS5-PFS-Packager-v1.0-Windows-x64
-          path: |
-            release/*.zip
-            release/SHA256SUMS.txt
+          name: PS5-PFS-Packager-v1.0-Windows-x64-EXE
+          path: release/*.exe
           if-no-files-found: error
 
-      - name: Publish GitHub release
+      - name: Publish v1.0 executable (replace old ZIP assets)
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference = 'Stop'
+          if ($env:GITHUB_REPOSITORY -ne 'utkubrs/PS5-PFS-Packager') { throw 'Unexpected repository' }
           $tag = 'v1.0'
-          gh release view $tag --repo "$env:GITHUB_REPOSITORY" *> $null
+          $exe = 'release/PS5-PFS-Packager-v1.0-Windows-x64.exe'
+          if (!(Test-Path $exe)) { throw 'No v1.0 EXE to publish' }
+          $sha256 = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
           if ($LASTEXITCODE -ne 0) {
-            gh release create $tag --repo "$env:GITHUB_REPOSITORY" --target "$env:GITHUB_SHA" --title "PS5 PFS Packager $tag" --notes "Windows x64 package built from the repository with MkPFS 1.1.0. See README for instructions."
-            if ($LASTEXITCODE -ne 0) { throw "Release creation failed" }
+            gh release create $tag --repo $env:GITHUB_REPOSITORY --target "$env:GITHUB_SHA" --title 'PS5 PFS Packager v1.0' --notes 'Windows x64 standalone EXE'
+            if ($LASTEXITCODE -ne 0) { throw 'Release creation failed' }
           }
-          gh release upload $tag "release/PS5-PFS-Packager-v1.0-Windows-x64.zip" "release/SHA256SUMS.txt" --clobber --repo "$env:GITHUB_REPOSITORY"
-          if ($LASTEXITCODE -ne 0) { throw "Release upload failed" }
+          # The release already exists, so move the v1.0 tag to the tested source.
+          gh api -X PATCH "repos/$env:GITHUB_REPOSITORY/git/refs/tags/$tag" -f sha="$env:GITHUB_SHA" -F force=true | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to move v1.0 tag' }
+          gh release upload $tag $exe --clobber --repo $env:GITHUB_REPOSITORY
+          if ($LASTEXITCODE -ne 0) { throw 'EXE upload failed' }
+          $notes = @"
+          PS5 PFS Packager v1.0 - Windows x64 portable standalone executable.
+          
+          PS4 Game + Update Merge: an entered custom game name now updates all existing PARAM.SFO TITLE and TITLE_XX fields (like the SFO Editor's Apply to All).
+          TITLE_ID, CONTENT_ID, APP_VER and base/update source files remain untouched.
+          
+          Install: download the EXE and run it; no ZIP or Python installation required.
+          MkPFS 1.1.0 and the PS4 PKG extractor are embedded. See README.md in the repository for instructions and license notices.
+          
+          SHA256: $sha256
+          "@
+          gh release edit $tag --repo $env:GITHUB_REPOSITORY --title 'PS5 PFS Packager v1.0' --notes $notes --latest
+          if ($LASTEXITCODE -ne 0) { throw 'Release notes update failed' }
+          # Remove previous v1.0 ZIP/checksum assets; offer only one EXE.
+          $assets = @(gh release view $tag --repo $env:GITHUB_REPOSITORY --json assets --jq '.assets[].name')
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot list release assets' }
+          foreach ($asset in $assets) {
+            if ($asset -ne 'PS5-PFS-Packager-v1.0-Windows-x64.exe') {
+              gh release delete-asset $tag $asset --yes --repo $env:GITHUB_REPOSITORY
+              if ($LASTEXITCODE -ne 0) { throw "Failed to remove old asset: $asset" }
+            }
+          }
+          Write-Host "Release now contains the standalone EXE only (plus GitHub automatic source code archives)."
+
+      - name: Remove old releases and their version tags
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:GITHUB_REPOSITORY -ne 'utkubrs/PS5-PFS-Packager') { throw 'Unexpected repository' }
+          # Never delete anything until v1.0's EXE has been published and verified.
+          $v1Assets = @(gh release view v1.0 --repo $env:GITHUB_REPOSITORY --json assets --jq '.assets[].name')
+          if ($LASTEXITCODE -ne 0 -or $v1Assets -notcontains 'PS5-PFS-Packager-v1.0-Windows-x64.exe') {
+            throw 'Safety check: v1.0 EXE is not available'
+          }
+          $tags = @(gh release list --repo $env:GITHUB_REPOSITORY --limit 1000 --json tagName --jq '.[].tagName')
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot list existing releases' }
+          foreach ($oldTag in $tags) {
+            if ($oldTag -and $oldTag -ne 'v1.0') {
+              Write-Host "Deleting old release and version tag: $oldTag"
+              gh release delete "$oldTag" --yes --cleanup-tag --repo $env:GITHUB_REPOSITORY
+              if ($LASTEXITCODE -ne 0) { throw "Could not delete old release: $oldTag" }
+            }
+          }
+          # Also remove any orphaned historical semantic-version tags.
+          $refs = @(gh api "repos/$env:GITHUB_REPOSITORY/git/matching-refs/tags" --jq '.[].ref')
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot list tag references' }
+          foreach ($ref in $refs) {
+            if ($ref -match '^refs/tags/v\\d' -and $ref -ne 'refs/tags/v1.0') {
+              $suffix = $ref.Substring('refs/'.Length)
+              Write-Host "Deleting orphaned old version tag: $ref"
+              gh api -X DELETE "repos/$env:GITHUB_REPOSITORY/git/refs/$suffix" | Out-Null
+              if ($LASTEXITCODE -ne 0) { throw "Could not delete tag: $ref" }
+            }
+          }
+          Write-Host 'Old releases cleaned. v1.0 retained.'

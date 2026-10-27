@@ -6,8 +6,9 @@ import sys
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/"src"))
 from ps4_merge import merge_ps4_folders, edit_sfo_title, sfo_fields
 
-def make_sfo(path, title="Base Game", title_id="CUSA12345", category="gd", app_ver="1.00"):
+def make_sfo(path, title="Base Game", title_id="CUSA12345", category="gd", app_ver="1.00", localized_titles=None):
     values={"TITLE":title,"TITLE_ID":title_id,"CONTENT_ID":"UP0000-CUSA12345_00-EXAMPLE000000000","CATEGORY":category,"APP_VER":app_ver}
+    values.update(localized_titles or {})
     keys=bytearray();data=bytearray();entries=[]
     for name,value in values.items():
         keyoff=len(keys);keys+=name.encode()+b"\0"
@@ -53,6 +54,51 @@ class PS4MergeTest(unittest.TestCase):
             self.assertEqual(sfo_fields(str(merged / "sce_sys" / "param.sfo"))["TITLE"], "My Game (TR)")
             self.assertTrue(samples)
             self.assertEqual(samples[-1][0], samples[-1][1])
+
+    def test_custom_game_title_applies_to_all_existing_locales_without_update(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            base, merged = root / "base", root / "merged"
+            (base / "sce_sys").mkdir(parents=True)
+            (base / "eboot.bin").write_bytes(b"GAME")
+            source = base / "sce_sys" / "param.sfo"
+            make_sfo(source, localized_titles={
+                "TITLE_00": "Original Japanese",
+                "TITLE_01": "Original English",
+                "TITLE_20": "Original German",
+                "TITLE_29": "Original Last",
+            })
+            original = source.read_bytes()
+            merge_ps4_folders(str(base), None, str(merged), "How to Survive (TR)")
+            result = sfo_fields(str(merged / "sce_sys" / "param.sfo"))
+            for key in ("TITLE", "TITLE_00", "TITLE_01", "TITLE_20", "TITLE_29"):
+                self.assertEqual(result[key], "How to Survive (TR)", key)
+            self.assertNotIn("TITLE_02", result)
+            self.assertEqual(result["TITLE_ID"], "CUSA12345")
+            self.assertEqual(result["APP_VER"], "1.00")
+            self.assertEqual(source.read_bytes(), original)
+
+    def test_custom_game_title_applies_to_patch_locales_and_keeps_version(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            base, update, merged = root / "base", root / "update", root / "merged"
+            for folder in (base, update):
+                (folder / "sce_sys").mkdir(parents=True)
+            (base / "eboot.bin").write_bytes(b"GAME")
+            make_sfo(base / "sce_sys" / "param.sfo", localized_titles={"TITLE_00": "Base JP"})
+            patch_sfo = update / "sce_sys" / "param.sfo"
+            make_sfo(patch_sfo, category="gp", app_ver="1.02",
+                     localized_titles={"TITLE_00": "Patch JP", "TITLE_01": "Patch EN",
+                                       "TITLE_12": "Patch TR", "TITLE_29": "Patch Extra"})
+            patch_original = patch_sfo.read_bytes()
+            merge_ps4_folders(str(base), str(update), str(merged), "Survive v1.02 (TR)")
+            result = sfo_fields(str(merged / "sce_sys" / "param.sfo"))
+            for key in ("TITLE", "TITLE_00", "TITLE_01", "TITLE_12", "TITLE_29"):
+                self.assertEqual(result[key], "Survive v1.02 (TR)", key)
+            self.assertEqual(result["APP_VER"], "1.02")
+            self.assertEqual(result["CATEGORY"], "gd")
+            self.assertEqual(result["TITLE_ID"], "CUSA12345")
+            self.assertEqual(patch_sfo.read_bytes(), patch_original)
 
     def test_base_only_moves_only_caller_owned_temp_extraction(self):
         with tempfile.TemporaryDirectory() as tmp:

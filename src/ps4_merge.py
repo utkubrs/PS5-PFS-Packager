@@ -7,6 +7,7 @@ is performed separately by ps4_inputs.
 """
 from __future__ import annotations
 import os
+import re
 import shutil
 import struct
 from pathlib import Path
@@ -172,7 +173,17 @@ def merge_ps4_folders(base: str, update: str | None, destination: str, title: st
             # a separately installed patch. Retain the base game's CATEGORY.
             edits["CATEGORY"] = base_fields.get("CATEGORY") or "gd"
         if title:
-            edits["TITLE"] = title
+            # Same "Apply to All" behavior as the PARAM.SFO editor.
+            # Only modify TITLE and existing localized TITLE_XX strings;
+            # never modify TITLE_ID, CONTENT_ID or application version.
+            existing_fields = sfo_fields(str(final_sfo))
+            title_keys = [
+                key for key in existing_fields
+                if re.fullmatch(r"TITLE(?:_\d{2})?", key)
+            ]
+            if not title_keys:
+                raise ValueError("Merged PARAM.SFO has no editable TITLE fields")
+            edits.update({key: title for key in title_keys})
         if edits:
             edit_sfo_text_fields(str(final_sfo), edits)
         final_fields = sfo_fields(str(final_sfo))
