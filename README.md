@@ -46,3 +46,14 @@ Download the [latest Windows x64 release](https://github.com/utkubrs/PS5-PFS-Pac
 Sources are in `src/`, tests in `tests/`, and the Windows build entrypoint is `scripts/build_windows.bat`. GitHub Actions runs Windows tests and publishes the portable ZIP on `main`. The project is GPL-3.0 licensed: see `LICENSE`. Dependency acknowledgments: Python, Nuitka, Tkinter, MkPFS, psutil, cryptography and the pinned open-source `pkgextract` tool.
 
 > Note: The release is unsigned; use the published `SHA256SUMS.txt` for verification. The executable extracts bundled runtime components into a temporary directory while running, but the distribution ZIP does not contain loose runtime DLL/PYD files.
+
+
+## Third-party notices / Üçüncü taraf lisansları
+
+- **MkPFS 1.1.0** (PSBrew/MkPFS): GPL-3.0, PFS/FFPFSC/exFAT işleme
+- **Python + Tkinter**: Python Software Foundation License
+- **Nuitka**: Apache-2.0
+- **psutil**: BSD-3-Clause
+- **cryptography**: Apache-2.0 / BSD
+
+Yukarıdaki projelerin güncel tam lisans metinleri için kendi kaynak depolarına bakınız. **PlayStation** ve **PS5**, Sony Interactive Entertainment markalarıdır. Proje Sony ile ilişkili veya Sony tarafından desteklenen bir ürün değildir. Bu yazılım yalnızca homebrew, araştırma ve yasal olarak sahip olunan içeriklerin yedeklenmesi için tasarlanmıştır. Hukuki sorumluluk kullanıcıya aittir.
