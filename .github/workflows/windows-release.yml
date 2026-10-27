@@ -282,7 +282,7 @@ jobs:
           $notes = @"
           PS5 PFS Packager v1.0 - Windows x64 portable standalone executable.
           
-          Added an experimental PS4-only FFPFSC to PKG conversion: MkPFS deep unpack, PS4 SFO validation, GP4 generation, and standalone PKG build with OrbisPkgTool. PS5 PKG building is not supported.
+          PS4 FFPFSC to PKG: recover embedded CUSAxxxxx/app.pkg directly (byte-for-byte) when present; experimental GP4/OrbisPkgTool rebuild only when no embedded PKG is found. PS5 PKG building is not supported.
           PS4 Game + Update Merge: missing sce_sys/pic0.png or pic0.dds is repaired by renaming staged pic1.png or pic1.dds; existing pic0 remains untouched.
           Custom game names apply to all existing PARAM.SFO TITLE and TITLE_XX fields.
           TITLE_ID, CONTENT_ID, APP_VER and base/update source files remain untouched.

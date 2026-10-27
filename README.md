@@ -1,6 +1,6 @@
 # PS5 PFS Packager v1.0
 
-Portable Windows 10/11 x64 GUI for converting PS5 game folders and raw exFAT images to FFPFSC, handling PS4 game/update merges, editing PS4 PARAM.SFO title fields, and **experimentally building PS4 fake PKGs from supported PS4 FFPFSC images**.
+Portable Windows 10/11 x64 GUI for converting PS5 game folders and raw exFAT images to FFPFSC, handling PS4 game/update merges, editing PS4 PARAM.SFO title fields, and **extracting embedded PS4 app.pkg files or experimentally rebuilding supported PS4 packages**.
 
 [**Download PS5-PFS-Packager.exe**](https://github.com/utkubrs/PS5-PFS-Packager/releases/download/v1.0/PS5-PFS-Packager.exe) · [Release v1.0](https://github.com/utkubrs/PS5-PFS-Packager/releases/tag/v1.0)
 
@@ -26,13 +26,15 @@ The executable bundles Python runtime components, MkPFS 1.1.0, the PS4 PKG extra
 
 ## FFPFSC → PS4 PKG (experimental)
 
-The new **FFPFSC → PS4 PKG** button converts a **supported PS4 game** image using this pipeline:
+The **FFPFSC → PS4 PKG** button first checks for an original, embedded `CUSA12345/app.pkg` file. When found, it **extracts that package unchanged** instead of rebuilding it.
 
-1. Select a PS4 `.ffpfsc` image (typically a CUSA title), output `.pkg` filename and TEMP folder.
-2. MkPFS deep-unpacks the image into a temporary game directory.
-3. The tool checks for `eboot.bin`, `sce_sys/param.sfo`, a CUSA title ID and standalone base-game `CATEGORY=gd`.
-4. The bundled OrbisPkgTool creates a strict GP4 project and builds and validates a PS4 fake PKG.
-5. After checking the PKG header and output size, the app copies the result to the chosen filename. The original FFPFSC image is not modified.
+1. Select a supported `.ffpfsc` image, output `.pkg` filename and TEMP folder.
+2. MkPFS deep-unpacks the FFPFSC image into a private temporary directory.
+3. If a single valid `CUSAxxxxx/app.pkg` is present, the program verifies its PS4 PKG header, then copies it to your selected output filename without modifying its contents.
+4. If no embedded package exists, a legacy **experimental fallback** checks for PS4 `eboot.bin` and `sce_sys/param.sfo`, then attempts GP4 generation and fake-PKG building with the bundled OrbisPkgTool.
+5. The source FFPFSC image is never modified. Output is not overwritten, and temporary files are removed only after success.
+
+The fallback builder is optional for extraction of an embedded `app.pkg`. This process does not reconstruct a missing original retail PKG or decrypt encrypted files.
 
 **Limitations and safety:**
 
@@ -41,7 +43,7 @@ The new **FFPFSC → PS4 PKG** button converts a **supported PS4 game** image us
 - The open-source PS4 PKG builder's output is **experimental** and has not been verified on a physical PlayStation console by this project. Successful packaging does not guarantee installation, launching or save compatibility.
 - Package output will **never overwrite** an existing `.pkg`. Temporary working files are removed after success and retained after failure to aid troubleshooting.
 - Sufficient temporary and output free space is required; large games may need considerably more space than the compressed input file.
-- Some FFPFSC containers are incompatible with PS4 GP4 packaging even when they unpack correctly.
+- Embedded packages with the `CUSAxxxxx/app.pkg` layout can be recovered byte-for-byte (apart from file naming on disk). Other FFPFSC layouts may not be supported; the GP4 fallback is experimental.
 
 ## Requirements and troubleshooting
 

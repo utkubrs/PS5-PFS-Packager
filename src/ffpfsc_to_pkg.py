@@ -61,6 +61,48 @@ def find_ps4_game_root(folder: str | Path) -> Path:
     return root
 
 
+def find_embedded_ps4_pkg(extracted: str | Path) -> Path | None:
+    """Return a single valid CUSAxxxxx/app.pkg, or None if no embedded package exists.
+
+    Ignore non-CUSA paths and reject multiple different packages, rather than
+    accidentally selecting an unrelated or ambiguous file.
+    """
+    import re
+    root = Path(extracted).resolve()
+    if not root.is_dir():
+        return None
+    candidates = []
+    # Wrapped images can unpack to a game folder directly or inside one
+    # additional directory. Keep discovery shallow and predictable.
+    possible = [root]
+    possible.extend(p for p in root.iterdir() if p.is_dir() and not p.is_symlink())
+    for folder in possible:
+        if re.fullmatch(r"CUSA\d{5}", folder.name, re.IGNORECASE):
+            pkg = folder / "app.pkg"
+            if pkg.is_file() and not pkg.is_symlink():
+                candidates.append(pkg)
+        else:
+            for game in folder.iterdir():
+                if not game.is_dir() or game.is_symlink():
+                    continue
+                if re.fullmatch(r"CUSA\d{5}", game.name, re.IGNORECASE):
+                    pkg = game / "app.pkg"
+                    if pkg.is_file() and not pkg.is_symlink():
+                        candidates.append(pkg)
+    unique = {str(pkg.resolve()): pkg for pkg in candidates}
+    if len(unique) > 1:
+        raise ValueError("Several CUSA*/app.pkg files were found. Select a single-game FFPFSC image.")
+    if not unique:
+        return None
+    pkg = next(iter(unique.values()))
+    if pkg.stat().st_size < 1024:
+        raise ValueError("Embedded CUSA*/app.pkg is empty or truncated.")
+    with pkg.open("rb") as handle:
+        if handle.read(4) != PKG_MAGIC:
+            raise ValueError("Embedded app.pkg has an invalid PS4 PKG signature.")
+    return pkg
+
+
 def run_live_command(args: list[str], log=None, cancel: threading.Event | None = None):
     """Run a subprocess without a shell; consume both streams without pipe deadlock."""
     if log:
@@ -113,7 +155,7 @@ def convert_ffpfsc_to_ps4_pkg(
     log=None, cancel: threading.Event | None = None,
     command_runner=None,
 ) -> Path:
-    """Unpack -> validate PS4 -> generate GP4 -> build and validate PKG.
+    """Prefer embedded CUSAxxxxx/app.pkg; rebuild only for unpacked PS4 games.
 
     Source image is read-only; the destination never gets a partial PKG.
     Staging remains after a failure for diagnostics and safe retry.
@@ -121,9 +163,7 @@ def convert_ffpfsc_to_ps4_pkg(
     image = inspect_ffpfsc(source)
     dest = Path(destination).resolve()
     temp = Path(temp_dir).resolve()
-    builder = Path(pkg_builder).resolve()
-    if not builder.is_file():
-        raise ValueError("OrbisPkgTool.exe is missing. Please install/select the PS4 PKG builder.")
+    builder = Path(pkg_builder).resolve() if pkg_builder else None
     if not mkpfs_prefix:
         raise ValueError("MkPFS is unavailable.")
     if dest.suffix.lower() != ".pkg" or dest == image:
@@ -150,26 +190,36 @@ def convert_ffpfsc_to_ps4_pkg(
         if cancel is not None and cancel.is_set():
             raise ConversionCancelled("Conversion cancelled.")
         if log:
-            log("Stage 1/3: unpacking the FFPFSC image (read-only).")
+            log("Unpacking the FFPFSC image to locate an embedded app.pkg or PS4 game files.")
         invoke([*mkpfs_prefix, "unpack", "--deep", str(image), str(extracted)])
         if cancel is not None and cancel.is_set():
             raise ConversionCancelled("Conversion cancelled.")
-        game = find_ps4_game_root(extracted)
-        # ShadowMount+ uses param.json as a companion to PS4 param.sfo;
+        embedded_pkg = find_embedded_ps4_pkg(extracted)
+        if embedded_pkg is not None:
+            if log:
+                log("Found CUSA*/app.pkg inside FFPFSC. Copying the original PKG without rebuilding.")
+            provisional = embedded_pkg
+        else:
+            if builder is None or not builder.is_file():
+                raise ValueError(
+                    "No embedded CUSA*/app.pkg was found. An OrbisPkgTool builder is "
+                    "required to rebuild a PS4 PKG from the unpacked game.")
+            game = find_ps4_game_root(extracted)
+            # ShadowMount+ uses param.json as a companion to PS4 param.sfo;
         # the synthetic JSON must not be treated as PS4 package metadata.
-        shadowmount_json = game / "sce_sys" / "param.json"
-        if shadowmount_json.is_file():
-            shadowmount_json.unlink()
-        if log:
-            log("Stage 2/3: generating the PS4 GP4 project.")
-        invoke([str(builder), "gp4gen", str(game), "--strict-gengp4", "--out", str(gp4)])
-        if not gp4.is_file():
-            raise RuntimeError("GP4 project generation did not create a file.")
-        if cancel is not None and cancel.is_set():
-            raise ConversionCancelled("Conversion cancelled.")
-        if log:
-            log("Stage 3/3: building and validating the PS4 fake PKG.")
-        invoke([str(builder), "build", str(gp4), str(game), "--out", str(provisional), "--validate"])
+            shadowmount_json = game / "sce_sys" / "param.json"
+            if shadowmount_json.is_file():
+                shadowmount_json.unlink()
+            if log:
+                log("Stage 2/3: generating the PS4 GP4 project.")
+            invoke([str(builder), "gp4gen", str(game), "--strict-gengp4", "--out", str(gp4)])
+            if not gp4.is_file():
+                raise RuntimeError("GP4 project generation did not create a file.")
+            if cancel is not None and cancel.is_set():
+                raise ConversionCancelled("Conversion cancelled.")
+            if log:
+                log("Stage 3/3: building and validating the PS4 fake PKG.")
+            invoke([str(builder), "build", str(gp4), str(game), "--out", str(provisional), "--validate"])
         if not provisional.is_file() or provisional.stat().st_size < 1024:
             raise RuntimeError("The PKG builder did not produce a valid-sized file.")
         with provisional.open("rb") as handle:
@@ -194,7 +244,8 @@ def convert_ffpfsc_to_ps4_pkg(
                 partial.unlink()
         success = True
         if log:
-            log("PS4 PKG created: " + str(dest))
+            log(("Original embedded PS4 PKG extracted: " if embedded_pkg is not None
+                 else "PS4 PKG built: ") + str(dest))
         return dest
     except Exception:
         if log:
