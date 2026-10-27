@@ -46,7 +46,6 @@ if exist "assets\completion.mp3" if exist "assets\error.mp3" (
 
 "%PY%" -m nuitka ^
   --mode=onefile ^
-  --onefile-no-compression ^
   --onefile-no-dll ^
   --mingw64 ^
   --assume-yes-for-downloads ^
@@ -75,8 +74,8 @@ if exist "assets\completion.mp3" if exist "assets\error.mp3" (
   --product-name="PS5 PFS Packager" ^
   --company-name="PS5 PFS Packager Contributors" ^
   --copyright="GPL-3.0-or-later" ^
-  --file-version=2.30.0.0 ^
-  --product-version=2.30.0.0 ^
+  --file-version=1.0.0.0 ^
+  --product-version=1.0.0.0 ^
   src\ps5_pfs_packager.py
 
 if errorlevel 1 goto :error
