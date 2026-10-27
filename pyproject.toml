@@ -1,6 +1,6 @@
 [project]
 name = "ps5-pfs-packager"
-version = "2.32.0"
+version = "1.0"
 description = "Windows GUI for converting PS5 game folders and exFAT images to FFPFSC, with writable image editing and 15-language support."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -24,6 +24,6 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/YOUR_GITHUB_USERNAME/PS5-PFS-Packager"
-Repository = "https://github.com/YOUR_GITHUB_USERNAME/PS5-PFS-Packager"
-Issues = "https://github.com/YOUR_GITHUB_USERNAME/PS5-PFS-Packager/issues"
+Homepage = "https://github.com/utkubrs/PS5-PFS-Packager"
+Repository = "https://github.com/utkubrs/PS5-PFS-Packager"
+Issues = "https://github.com/utkubrs/PS5-PFS-Packager/issues"
