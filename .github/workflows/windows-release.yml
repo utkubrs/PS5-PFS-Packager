@@ -204,7 +204,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $exe = (Resolve-Path 'release/PS5-PFS-Packager-v1.0-Windows-x64.exe').Path
+          $exe = (Resolve-Path 'release/PS5-PFS-Packager.exe').Path
           $isolated = Join-Path $env:RUNNER_TEMP 'Standalone Final With Spaces'
           New-Item -ItemType Directory -Force $isolated | Out-Null
           $target = Join-Path $isolated 'PS5-PFS-Packager.exe'
@@ -220,11 +220,11 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: PS5-PFS-Packager-v1.0-Windows-x64-EXE
+          name: PS5-PFS-Packager-v1.0-EXE
           path: release/*.exe
           if-no-files-found: error
 
-      - name: Publish v1.0 executable (replace old ZIP assets)
+      - name: Update existing v1.0 release with PS5-PFS-Packager.exe
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         shell: pwsh
         env:
@@ -233,13 +233,12 @@ jobs:
           $ErrorActionPreference = 'Stop'
           if ($env:GITHUB_REPOSITORY -ne 'utkubrs/PS5-PFS-Packager') { throw 'Unexpected repository' }
           $tag = 'v1.0'
-          $exe = 'release/PS5-PFS-Packager-v1.0-Windows-x64.exe'
+          $exe = 'release/PS5-PFS-Packager.exe'
           if (!(Test-Path $exe)) { throw 'No v1.0 EXE to publish' }
           $sha256 = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
           gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
           if ($LASTEXITCODE -ne 0) {
-            gh release create $tag --repo $env:GITHUB_REPOSITORY --target "$env:GITHUB_SHA" --title 'PS5 PFS Packager v1.0' --notes 'Windows x64 standalone EXE'
-            if ($LASTEXITCODE -ne 0) { throw 'Release creation failed' }
+            throw 'Existing v1.0 release not found; will NOT create a new release'
           }
           # The release already exists, so move the v1.0 tag to the tested source.
           gh api -X PATCH "repos/$env:GITHUB_REPOSITORY/git/refs/tags/$tag" -f sha="$env:GITHUB_SHA" -F force=true | Out-Null
@@ -249,7 +248,7 @@ jobs:
           $notes = @"
           PS5 PFS Packager v1.0 - Windows x64 portable standalone executable.
           
-          PS4 Game + Update Merge: an entered custom game name now updates all existing PARAM.SFO TITLE and TITLE_XX fields (like the SFO Editor's Apply to All).
+          PS4 Game + Update Merge: missing sce_sys/pic0.png or pic0.dds is repaired by renaming staged pic1.png or pic1.dds; existing pic0 remains untouched.\n          Custom game names apply to all existing PARAM.SFO TITLE and TITLE_XX fields.
           TITLE_ID, CONTENT_ID, APP_VER and base/update source files remain untouched.
           
           Install: download the EXE and run it; no ZIP or Python installation required.
@@ -263,44 +262,26 @@ jobs:
           $assets = @(gh release view $tag --repo $env:GITHUB_REPOSITORY --json assets --jq '.assets[].name')
           if ($LASTEXITCODE -ne 0) { throw 'Cannot list release assets' }
           foreach ($asset in $assets) {
-            if ($asset -ne 'PS5-PFS-Packager-v1.0-Windows-x64.exe') {
+            if ($asset -ne 'PS5-PFS-Packager.exe') {
               gh release delete-asset $tag $asset --yes --repo $env:GITHUB_REPOSITORY
               if ($LASTEXITCODE -ne 0) { throw "Failed to remove old asset: $asset" }
             }
           }
           Write-Host "Release now contains the standalone EXE only (plus GitHub automatic source code archives)."
 
-      - name: Remove old releases and their version tags
+      - name: Verify v1.0 remains the only release
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference = 'Stop'
-          if ($env:GITHUB_REPOSITORY -ne 'utkubrs/PS5-PFS-Packager') { throw 'Unexpected repository' }
-          # Never delete anything until v1.0's EXE has been published and verified.
-          $v1Assets = @(gh release view v1.0 --repo $env:GITHUB_REPOSITORY --json assets --jq '.assets[].name')
-          if ($LASTEXITCODE -ne 0 -or $v1Assets -notcontains 'PS5-PFS-Packager-v1.0-Windows-x64.exe') {
-            throw 'Safety check: v1.0 EXE is not available'
+          $releases = @(gh release list --repo $env:GITHUB_REPOSITORY --limit 1000 --json tagName --jq '.[].tagName')
+          if ($LASTEXITCODE -ne 0 -or $releases.Count -ne 1 -or $releases[0] -ne 'v1.0') {
+            throw 'Expected only the existing v1.0 release'
           }
-          $tags = @(gh release list --repo $env:GITHUB_REPOSITORY --limit 1000 --json tagName --jq '.[].tagName')
-          if ($LASTEXITCODE -ne 0) { throw 'Cannot list existing releases' }
-          foreach ($oldTag in $tags) {
-            if ($oldTag -and $oldTag -ne 'v1.0') {
-              Write-Host "Deleting old release and version tag: $oldTag"
-              gh release delete "$oldTag" --yes --cleanup-tag --repo $env:GITHUB_REPOSITORY
-              if ($LASTEXITCODE -ne 0) { throw "Could not delete old release: $oldTag" }
-            }
+          $assets = @(gh release view v1.0 --repo $env:GITHUB_REPOSITORY --json assets --jq '.assets[].name')
+          if ($LASTEXITCODE -ne 0 -or $assets.Count -ne 1 -or $assets[0] -ne 'PS5-PFS-Packager.exe') {
+            throw 'Expected the sole v1.0 release asset to be PS5-PFS-Packager.exe'
           }
-          # Also remove any orphaned historical semantic-version tags.
-          $refs = @(gh api "repos/$env:GITHUB_REPOSITORY/git/matching-refs/tags" --jq '.[].ref')
-          if ($LASTEXITCODE -ne 0) { throw 'Cannot list tag references' }
-          foreach ($ref in $refs) {
-            if ($ref -match '^refs/tags/v\d' -and $ref -ne 'refs/tags/v1.0') {
-              $suffix = $ref.Substring('refs/'.Length)
-              Write-Host "Deleting orphaned old version tag: $ref"
-              gh api -X DELETE "repos/$env:GITHUB_REPOSITORY/git/refs/$suffix" | Out-Null
-              if ($LASTEXITCODE -ne 0) { throw "Could not delete tag: $ref" }
-            }
-          }
-          Write-Host 'Old releases cleaned. v1.0 retained.'
+          Write-Host 'Existing v1.0 release verified; one EXE asset; no other release created.'

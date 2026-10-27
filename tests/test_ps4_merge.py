@@ -23,6 +23,74 @@ def make_sfo(path, title="Base Game", title_id="CUSA12345", category="gd", app_v
     path.write_bytes(blob)
 
 class PS4MergeTest(unittest.TestCase):
+    def test_missing_pic0_artwork_renamed_only_in_merge_staging(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            base, out = root / "base", root / "merged"
+            (base / "sce_sys").mkdir(parents=True)
+            (base / "eboot.bin").write_bytes(b"GAME")
+            make_sfo(base / "sce_sys" / "param.sfo")
+            (base / "sce_sys" / "pic1.png").write_bytes(b"PNG SOURCE")
+            (base / "sce_sys" / "pic1.dds").write_bytes(b"DDS SOURCE")
+            result = merge_ps4_folders(str(base), None, str(out))
+            self.assertEqual((out / "sce_sys" / "pic0.png").read_bytes(), b"PNG SOURCE")
+            self.assertEqual((out / "sce_sys" / "pic0.dds").read_bytes(), b"DDS SOURCE")
+            self.assertFalse((out / "sce_sys" / "pic1.png").exists())
+            self.assertFalse((out / "sce_sys" / "pic1.dds").exists())
+            self.assertTrue((base / "sce_sys" / "pic1.png").exists())
+            self.assertTrue((base / "sce_sys" / "pic1.dds").exists())
+            self.assertEqual(len(result["artwork_renamed"]), 2)
+
+    def test_existing_pic0_kept_and_missing_dds_renamed_independently(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            base, out = root / "base", root / "merged"
+            (base / "sce_sys").mkdir(parents=True)
+            (base / "eboot.bin").write_bytes(b"GAME")
+            make_sfo(base / "sce_sys" / "param.sfo")
+            (base / "sce_sys" / "pic0.png").write_bytes(b"KEEP PNG")
+            (base / "sce_sys" / "pic1.png").write_bytes(b"OTHER PNG")
+            (base / "sce_sys" / "pic1.dds").write_bytes(b"FALLBACK DDS")
+            result = merge_ps4_folders(str(base), None, str(out))
+            self.assertEqual((out / "sce_sys" / "pic0.png").read_bytes(), b"KEEP PNG")
+            self.assertEqual((out / "sce_sys" / "pic1.png").read_bytes(), b"OTHER PNG")
+            self.assertEqual((out / "sce_sys" / "pic0.dds").read_bytes(), b"FALLBACK DDS")
+            self.assertFalse((out / "sce_sys" / "pic1.dds").exists())
+            self.assertEqual(result["artwork_renamed"], ["pic1.dds -> pic0.dds"])
+
+    def test_update_artwork_does_not_override_base_fallback_images(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            base, update, out = root / "base", root / "patch", root / "merged"
+            for folder in (base, update):
+                (folder / "sce_sys").mkdir(parents=True)
+            (base / "eboot.bin").write_bytes(b"GAME")
+            make_sfo(base / "sce_sys" / "param.sfo", app_ver="1.00")
+            make_sfo(update / "sce_sys" / "param.sfo", app_ver="1.02", category="gp")
+            (base / "sce_sys" / "pic1.png").write_bytes(b"BASE PNG")
+            (base / "sce_sys" / "pic1.dds").write_bytes(b"BASE DDS")
+            (update / "sce_sys" / "pic0.png").write_bytes(b"PATCH PNG")
+            (update / "sce_sys" / "pic0.dds").write_bytes(b"PATCH DDS")
+            result = merge_ps4_folders(str(base), str(update), str(out))
+            self.assertEqual((out / "sce_sys" / "pic0.png").read_bytes(), b"BASE PNG")
+            self.assertEqual((out / "sce_sys" / "pic0.dds").read_bytes(), b"BASE DDS")
+            self.assertEqual((update / "sce_sys" / "pic0.png").read_bytes(), b"PATCH PNG")
+            self.assertEqual(result["app_ver"], "1.02")
+            self.assertEqual(len(result["artwork_renamed"]), 2)
+
+    def test_missing_both_pic_images_leaves_missing_and_temp_move_supported(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            base, out = root / "temp_extracted", root / "merged"
+            (base / "sce_sys").mkdir(parents=True)
+            (base / "eboot.bin").write_bytes(b"GAME")
+            make_sfo(base / "sce_sys" / "param.sfo")
+            result = merge_ps4_folders(str(base), None, str(out), move_base=True)
+            self.assertFalse((out / "sce_sys" / "pic0.png").exists())
+            self.assertFalse((out / "sce_sys" / "pic0.dds").exists())
+            self.assertFalse(base.exists())
+            self.assertEqual(result["artwork_renamed"], [])
+
     def test_title_edit_preserves_identity(self):
         with tempfile.TemporaryDirectory() as tmp:
             path=Path(tmp)/"param.sfo"

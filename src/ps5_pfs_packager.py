@@ -6608,6 +6608,8 @@ class App(tk.Tk):
                 move_base=game_is_temporary,
                 move_update=update_is_temporary,
             )
+            for artwork_change in result.get("artwork_renamed", []):
+                self._qlog("PS4 kapak görseli düzeltildi: " + artwork_change, "success")
             self._qlog(
                 "PS4 PARAM.SFO kaynağı: "
                 + ("update" if result["sfo_source"] == "update" else "ana oyun")

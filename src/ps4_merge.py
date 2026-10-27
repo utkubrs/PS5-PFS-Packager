@@ -12,7 +12,7 @@ import shutil
 import struct
 from pathlib import Path
 
-ARTWORK={"icon0.png","icon0.dds","pic0.png","pic1.png","snd0.at9","changeinfo","icon0_00.png"}
+ARTWORK={"icon0.png","icon0.dds","pic0.png","pic1.png","pic0.dds","pic1.dds","snd0.at9","changeinfo","icon0_00.png"}
 PROTECTED={"title_id","content_id"}
 
 def _parse_sfo(data: bytes):
@@ -87,6 +87,23 @@ def edit_sfo_title(path: str, title: str) -> None:
 def sfo_fields_from_bytes(data: bytes):
     return {key:(data[offset:offset+length].split(b"\0",1)[0].decode("utf-8","replace") if fmt==0x0204 else data[offset:offset+length].hex())
             for key,fmt,length,maximum,offset,_ in _parse_sfo(data)}
+
+def repair_staged_ps4_artwork(destination: Path) -> list[str]:
+    """Rename missing pic0 image counterparts in the private merge staging area.
+
+    Handle PNG and DDS independently and preserve any existing pic0 file.
+    Original game/update folders are never modified.
+    """
+    sce_sys = destination / "sce_sys"
+    renamed = []
+    for extension in ("png", "dds"):
+        desired = sce_sys / f"pic0.{extension}"
+        fallback = sce_sys / f"pic1.{extension}"
+        if not desired.exists() and fallback.is_file() and not fallback.is_symlink():
+            fallback.rename(desired)
+            renamed.append(f"pic1.{extension} -> pic0.{extension}")
+    return renamed
+
 
 def merge_ps4_folders(base: str, update: str | None, destination: str, title: str="", progress=None, move_base: bool=False, move_update: bool=False) -> dict:
     """Copy base into a private destination; overlay an update only when supplied."""
@@ -166,6 +183,9 @@ def merge_ps4_folders(base: str, update: str | None, destination: str, title: st
                         progress(copied, total, done_files, total_files)
                 else:
                     copy_with_progress(source_file, target_file)
+        # Base artwork wins over update artwork. Resolve missing pic0 images
+        # after extraction/merge but before metadata generation and FFPFSC packing.
+        renamed_artwork = repair_staged_ps4_artwork(destination)
         final_sfo = destination / "sce_sys" / "param.sfo"
         edits = {}
         if update is not None and update_fields.get("CATEGORY") == "gp":
@@ -195,6 +215,7 @@ def merge_ps4_folders(base: str, update: str | None, destination: str, title: st
             "title": final_fields.get("TITLE", ""),
             "app_ver": final_fields.get("APP_VER", ""),
             "sfo_source": "update" if update is not None else "base",
+            "artwork_renamed": renamed_artwork,
         }
     except BaseException:
         # Retain partial TEMP output when staged files have been moved; otherwise
