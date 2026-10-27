@@ -3610,7 +3610,7 @@ def run_internal_mkpfs(args: list[str]) -> int:
 
 from upgrade_features import inspect_game, validate_preflight, recommended_block_size
 from ps4_inputs import is_ps4_game_folder, detect_ps4_title_id, inspect_ps4_source, extract_pkg, find_pkg_extractor
-from ps4_merge import merge_ps4_folders, edit_sfo_title, sfo_fields
+from ps4_merge import merge_ps4_folders, edit_sfo_title, edit_sfo_text_fields, sfo_fields
 from ps4_merge_i18n import merge_text
 from ps4_cleanup import cleanup_ps4_temp
 from ps4_shadowmount_metadata import prepare_ps4_shadowmount_metadata, prepare_existing_temp_merge, ffpfsc_outer_pfs_profile, validate_ffpfsc_outer_header
@@ -6900,33 +6900,118 @@ class App(tk.Tk):
 
 
     def show_sfo_editor(self):
-        source=normalize_path(self.source_var.get().strip())
-        path=os.path.join(source,"sce_sys","param.sfo") if os.path.isdir(source) else source
+        """Edit every existing localized TITLE field in a PS4 PARAM.SFO."""
+        source = normalize_path(self.source_var.get().strip())
+        path = os.path.join(source, "sce_sys", "param.sfo") if os.path.isdir(source) else source
         if not os.path.isfile(path) or not path.lower().endswith(".sfo"):
-            path=filedialog.askopenfilename(title=merge_text(self.lang_code(), "select_sfo"),filetypes=[("SFO","*.sfo")],parent=self)
-            if not path:return
+            path = filedialog.askopenfilename(
+                title=merge_text(self.lang_code(), "select_sfo"),
+                filetypes=[("SFO", "*.sfo")], parent=self,
+            )
+            if not path:
+                return
         try:
-            info=sfo_fields(path)
+            info = sfo_fields(path)
         except Exception as exc:
-            messagebox.showerror("SFO",str(exc))
+            messagebox.showerror("SFO", str(exc), parent=self)
             return
-        dlg=tk.Toplevel(self)
-        dlg.title(merge_text(self.lang_code(), "sfo_title"))
-        dlg.geometry("590x260")
+
+        import re
+        import shutil
+        is_tr = self.lang_code().lower().startswith("tr")
+        fields = sorted(
+            (key for key in info if re.fullmatch(r"TITLE(?:_\\d{2})?", key)),
+            key=lambda key: (key != "TITLE", key),
+        )
+        if not fields:
+            messagebox.showerror("SFO", "TITLE alanı bulunamadı." if is_tr
+                                 else "No TITLE fields found.", parent=self)
+            return
+
+        dlg = tk.Toplevel(self)
+        dlg.title("PARAM.SFO – Tüm Oyun İsimleri" if is_tr else "PARAM.SFO – All Game Titles")
+        dlg.geometry("760x620")
+        dlg.minsize(560, 400)
         dlg.configure(bg="#151515")
-        for key in ("TITLE_ID","CONTENT_ID"):
-            tk.Label(dlg,text=key+": "+info.get(key,"-"),bg="#151515",fg="#cbd5e1").pack(anchor="w",padx=18,pady=5)
-        tk.Label(dlg,text=merge_text(self.lang_code(), "sfo_game_title"),bg="#151515",fg="white").pack(anchor="w",padx=18)
-        title=tk.StringVar(value=info.get("TITLE",""))
-        tk.Entry(dlg,textvariable=title,width=64).pack(padx=18,pady=8)
+        tk.Label(dlg, text=os.path.basename(path), bg="#151515", fg="#93c5fd",
+                 font=("Segoe UI", 11, "bold")).pack(anchor="w", padx=18, pady=(14, 4))
+        for key in ("TITLE_ID", "CONTENT_ID"):
+            tk.Label(dlg, text=key + ": " + info.get(key, "-"),
+                     bg="#151515", fg="#cbd5e1").pack(anchor="w", padx=18, pady=2)
+
+        help_text = ("Aşağıdaki tüm mevcut başlıkları ayrı ayrı düzenleyebilir veya "
+                     "tek isimle hepsini değiştirebilirsin." if is_tr else
+                     "Edit every existing title individually or apply one name to all.")
+        tk.Label(dlg, text=help_text, bg="#151515", fg="#e2e8f0",
+                 wraplength=710).pack(anchor="w", padx=18, pady=(12, 8))
+
+        bulk = tk.Frame(dlg, bg="#151515")
+        bulk.pack(fill="x", padx=18, pady=(0, 9))
+        bulk_value = tk.StringVar(value=info.get("TITLE", info[fields[0]]))
+        tk.Entry(bulk, textvariable=bulk_value, font=("Segoe UI", 10),
+                 bg="#262626", fg="white", insertbackground="white").pack(
+                     side="left", fill="x", expand=True, padx=(0, 10), ipady=5)
+        vars_by_key = {}
+        def apply_all():
+            for item in vars_by_key.values():
+                item.set(bulk_value.get())
+        tk.Button(bulk, text="Tümüne Uygula" if is_tr else "Apply to All",
+                  command=apply_all, bg="#2563eb", fg="white").pack(side="right")
+
+        body = tk.Frame(dlg, bg="#151515")
+        body.pack(fill="both", expand=True, padx=18, pady=4)
+        canvas = tk.Canvas(body, bg="#151515", highlightthickness=0)
+        scroll = tk.Scrollbar(body, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=scroll.set)
+        scroll.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+        items = tk.Frame(canvas, bg="#151515")
+        win = canvas.create_window((0, 0), window=items, anchor="nw")
+        items.bind("<Configure>", lambda _e: canvas.configure(
+            scrollregion=canvas.bbox("all")))
+        canvas.bind("<Configure>", lambda e: canvas.itemconfigure(win, width=e.width))
+        for key in fields:
+            row = tk.Frame(items, bg="#151515")
+            row.pack(fill="x", pady=4)
+            tk.Label(row, text=key, width=12, anchor="w", bg="#151515",
+                     fg="#cbd5e1", font=("Consolas", 10)).pack(side="left")
+            var = tk.StringVar(value=info[key])
+            vars_by_key[key] = var
+            tk.Entry(row, textvariable=var, bg="#262626", fg="white",
+                     insertbackground="white", font=("Segoe UI", 10)).pack(
+                         side="left", fill="x", expand=True, ipady=4)
+
         def save():
+            updates = {key: var.get() for key, var in vars_by_key.items()
+                       if var.get() != info[key]}
+            if not updates:
+                dlg.destroy()
+                return
             try:
-                edit_sfo_title(path,title.get())
-                messagebox.showinfo("SFO",merge_text(self.lang_code(), "sfo_saved"),parent=dlg)
+                # Retain a copy of the original, never overwrite an existing backup.
+                backup = path + ".bak"
+                if not os.path.exists(backup):
+                    shutil.copy2(path, backup)
+                edit_sfo_text_fields(path, updates)
+                messagebox.showinfo(
+                    "SFO",
+                    ("Tüm değişiklikler kaydedildi. Kimlik alanları korundu.\n"
+                     "Yedek: " + backup) if is_tr else
+                    ("Changes saved. Identity fields were preserved.\n"
+                     "Backup: " + backup),
+                    parent=dlg,
+                )
                 dlg.destroy()
             except Exception as exc:
-                messagebox.showerror("SFO",str(exc),parent=dlg)
-        tk.Button(dlg,text=merge_text(self.lang_code(), "save"),command=save,bg="#16a34a",fg="white").pack(pady=8)
+                messagebox.showerror("SFO", str(exc), parent=dlg)
+
+        footer = tk.Frame(dlg, bg="#151515")
+        footer.pack(fill="x", padx=18, pady=12)
+        tk.Label(footer, text=("%d başlık alanı" if is_tr else "%d title fields")
+                 % len(fields), bg="#151515", fg="#94a3b8").pack(side="left")
+        tk.Button(footer, text=merge_text(self.lang_code(), "save"), command=save,
+                  bg="#16a34a", fg="white", width=18,
+                  font=("Segoe UI", 10, "bold")).pack(side="right")
 
     def pick_source(self):
         if self.batch_var.get():
