@@ -191,7 +191,7 @@ jobs:
           if ($version -ne '1.0') { throw "Unexpected version: $version" }
           New-Item -ItemType Directory -Force release | Out-Null
           $source = 'dist/ps5_pfs_packager.dist/PS5-PFS-Packager.exe'
-          $releaseExe = "release/PS5-PFS-Packager-v$version-Windows-x64.exe"
+          $releaseExe = 'release/PS5-PFS-Packager.exe'
           if (!(Test-Path $source)) { throw 'Standalone onefile executable missing' }
           Copy-Item $source $releaseExe -Force
           $sourceHash = (Get-FileHash $source -Algorithm SHA256).Hash
@@ -248,7 +248,8 @@ jobs:
           $notes = @"
           PS5 PFS Packager v1.0 - Windows x64 portable standalone executable.
           
-          PS4 Game + Update Merge: missing sce_sys/pic0.png or pic0.dds is repaired by renaming staged pic1.png or pic1.dds; existing pic0 remains untouched.\n          Custom game names apply to all existing PARAM.SFO TITLE and TITLE_XX fields.
+          PS4 Game + Update Merge: missing sce_sys/pic0.png or pic0.dds is repaired by renaming staged pic1.png or pic1.dds; existing pic0 remains untouched.
+          Custom game names apply to all existing PARAM.SFO TITLE and TITLE_XX fields.
           TITLE_ID, CONTENT_ID, APP_VER and base/update source files remain untouched.
           
           Install: download the EXE and run it; no ZIP or Python installation required.
