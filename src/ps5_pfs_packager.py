@@ -6920,7 +6920,7 @@ class App(tk.Tk):
         import shutil
         is_tr = self.lang_code().lower().startswith("tr")
         fields = sorted(
-            (key for key in info if re.fullmatch(r"TITLE(?:_\\d{2})?", key)),
+            (key for key in info if re.fullmatch(r"TITLE(?:_\d{2})?", key)),
             key=lambda key: (key != "TITLE", key),
         )
         if not fields:
