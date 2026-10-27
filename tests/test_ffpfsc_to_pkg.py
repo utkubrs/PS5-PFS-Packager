@@ -62,7 +62,7 @@ class FfpfscToPkgTest(unittest.TestCase):
             pkg = output / "game.pkg"
             result = convert_ffpfsc_to_ps4_pkg(source, pkg, temp,
                                                ["mkpfs"], exe, command_runner=run)
-            self.assertEqual(result, pkg)
+            self.assertEqual(result.resolve(), pkg.resolve())
             self.assertEqual(pkg.read_bytes()[:4], PKG_MAGIC)
             self.assertEqual(len(calls), 3)
             self.assertEqual(calls[1][1], "gp4gen")
