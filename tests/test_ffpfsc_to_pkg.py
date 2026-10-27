@@ -71,62 +71,6 @@ class FfpfscToPkgTest(unittest.TestCase):
             self.assertEqual(source.read_bytes(), original)
             self.assertFalse(list(temp.glob("ffpfsc_ps4_pkg_*")))
 
-    def test_direct_embedded_cusa_app_pkg_is_copied_without_builder(self):
-        with tempfile.TemporaryDirectory() as d:
-            root = Path(d)
-            temp, output = root / "temp", root / "out"
-            temp.mkdir()
-            output.mkdir()
-            image = image_at(root / "game.ffpfsc")
-            original = image.read_bytes()
-            pkg_contents = PKG_MAGIC + b"EXISTING PS4 PACKAGE" + b"\0" * 4096
-            calls = []
-            def run(cmd):
-                calls.append(cmd)
-                if "unpack" in cmd:
-                    app = Path(cmd[-1]) / "CUSA54321" / "app.pkg"
-                    app.parent.mkdir(parents=True)
-                    app.write_bytes(pkg_contents)
-            out = output / "recovered.pkg"
-            result = convert_ffpfsc_to_ps4_pkg(
-                image, out, temp, ["mkpfs"], "",
-                command_runner=run)
-            self.assertEqual(result.resolve(), out.resolve())
-            self.assertEqual(out.read_bytes(), pkg_contents)
-            self.assertEqual(image.read_bytes(), original)
-            self.assertEqual(len(calls), 1)
-            self.assertFalse(list(temp.glob("ffpfsc_ps4_pkg_*")))
-
-    def test_embedded_pkg_inside_additional_wrapper_is_found(self):
-        from ffpfsc_to_pkg import find_embedded_ps4_pkg
-        with tempfile.TemporaryDirectory() as d:
-            root = Path(d)
-            p = root / "wrapper" / "CUSA12345" / "app.pkg"
-            p.parent.mkdir(parents=True)
-            p.write_bytes(PKG_MAGIC + b"\0" * 2048)
-            self.assertEqual(find_embedded_ps4_pkg(root), p)
-
-    def test_invalid_embedded_pkg_rejected_instead_of_fallback(self):
-        from ffpfsc_to_pkg import find_embedded_ps4_pkg
-        with tempfile.TemporaryDirectory() as d:
-            root = Path(d)
-            pkg = root / "CUSA12345" / "app.pkg"
-            pkg.parent.mkdir()
-            pkg.write_bytes(b"NOT A PACKAGE" + b"\0" * 2048)
-            with self.assertRaisesRegex(ValueError, "signature"):
-                find_embedded_ps4_pkg(root)
-
-    def test_multiple_embedded_packages_are_ambiguous(self):
-        from ffpfsc_to_pkg import find_embedded_ps4_pkg
-        with tempfile.TemporaryDirectory() as d:
-            root = Path(d)
-            for title in ("CUSA12345", "CUSA99999"):
-                pkg = root / title / "app.pkg"
-                pkg.parent.mkdir()
-                pkg.write_bytes(PKG_MAGIC + b"\0" * 2048)
-            with self.assertRaisesRegex(ValueError, "Several"):
-                find_embedded_ps4_pkg(root)
-
     def test_does_not_overwrite_pkg(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)

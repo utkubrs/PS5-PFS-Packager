@@ -6701,8 +6701,8 @@ class App(tk.Tk):
         tk.Label(dlg, text="FFPFSC → PS4 PKG", bg="#121a27", fg="white",
                  font=("Segoe UI", 18, "bold")).pack(anchor="w", padx=22, pady=(18, 4))
         tk.Label(dlg, text=translate(
-            "Önce CUSA*/app.pkg dosyasını çıkarır; yoksa PS4 oyundan PKG oluşturmayı dener.",
-            "Extracts embedded CUSA*/app.pkg first; otherwise tries rebuilding a PS4 PKG."),
+            "Yalnızca PS4 FFPFSC (CUSA). PS5 oyunlarını PKG'ye dönüştürmez.",
+            "PS4 FFPFSC (CUSA) only. PS5 PKG building is not supported."),
             bg="#121a27", fg="#e9b96e").pack(anchor="w", padx=22, pady=(0, 14))
         values = [tk.StringVar(), tk.StringVar(), tk.StringVar(value=self.temp_dir_var.get().strip())]
         bundled_builder = resource_path("tools/OrbisPkgTool.exe")
@@ -6713,7 +6713,7 @@ class App(tk.Tk):
             (translate("Kaynak .ffpfsc", "Source .ffpfsc"), values[0], "file"),
             (translate("Çıktı .pkg", "Output .pkg"), values[1], "save"),
             (translate("TEMP klasörü", "Temporary folder"), values[2], "folder"),
-            (translate("PS4 PKG oluşturucu (isteğe bağlı)", "PS4 PKG builder (fallback)"), builder, "builder"),
+            (translate("PS4 PKG oluşturucu", "PS4 PKG builder"), builder, "builder"),
         ]
         def browse(idx, kind):
             if kind in ("file", "builder"):
@@ -6742,8 +6742,8 @@ class App(tk.Tk):
                       command=lambda i=index, k=kind: browse(i, k),
                       bg="#334155", fg="white", width=9).pack(side="left", padx=(8, 0))
         tk.Label(dlg, text=translate(
-            "Gömülü CUSA*/app.pkg varsa doğrudan çıkarılır; orijinal FFPFSC değişmez.",
-            "Embedded CUSA*/app.pkg is copied directly when present; the source is unchanged."),
+            "PKG üretimi için TEMP'te geniş boş alan gerekir. Kaynak dosya değiştirilmez.",
+            "Large free TEMP space is required. The source image will not be modified."),
             bg="#121a27", fg="#94a3b8").pack(anchor="w", padx=22, pady=(9, 2))
         output_box = tk.Text(dlg, bg="#090f1b", fg="#cbd5e1",
                              insertbackground="white", height=9, state="disabled",
@@ -6769,10 +6769,10 @@ class App(tk.Tk):
             if working[0]:
                 return
             paths = [v.get().strip() for v in values]
-            if not paths[0] or not paths[1] or not paths[2]:
+            if not paths[0] or not paths[1] or not paths[2] or not builder.get().strip():
                 messagebox.showerror("FFPFSC", translate(
-                    "Kaynak dosya, çıktı ve TEMP klasörünü seçin.",
-                    "Select the source file, output path and TEMP folder."), parent=dlg)
+                    "Tüm dosya ve klasör alanlarını doldurun.",
+                    "Select the source, destination, TEMP folder and builder."), parent=dlg)
                 return
             prefix = self._get_mkpfs_prefix()
             if not prefix:
