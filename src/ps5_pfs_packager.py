@@ -3613,6 +3613,7 @@ from ps4_inputs import is_ps4_game_folder, detect_ps4_title_id, inspect_ps4_sour
 from ps4_merge import merge_ps4_folders, edit_sfo_title, edit_sfo_text_fields, sfo_fields
 from ps4_merge_i18n import merge_text
 from ps4_cleanup import cleanup_ps4_temp
+from ffpfsc_to_pkg import convert_ffpfsc_to_ps4_pkg, ConversionCancelled
 from ps4_shadowmount_metadata import prepare_ps4_shadowmount_metadata, prepare_existing_temp_merge, ffpfsc_outer_pfs_profile, validate_ffpfsc_outer_header
 
 class App(tk.Tk):
@@ -4016,6 +4017,12 @@ class App(tk.Tk):
             font=("Segoe UI", 10, "bold"),
         )
         self.ps4_queue_button.pack(side="left", padx=(8, 0))
+        self.ffpfsc_to_pkg_button = tk.Button(
+            ps4_tools, text="FFPFSC → PS4 PKG",
+            command=self.show_ffpfsc_to_pkg_dialog,
+            bg="#365277", fg="white", font=("Segoe UI", 10, "bold"))
+        self.ffpfsc_to_pkg_button.pack(side="left", padx=(8, 0))
+
 
         self.mode_tab_frame = tk.Frame(self, bg="#151515")
         self.mode_tab_frame.pack(fill="x", padx=34, pady=(0, 10))
@@ -6681,6 +6688,137 @@ class App(tk.Tk):
                 self._finish_ps4_job(False)
 
             self.after(0, failed)
+
+    def show_ffpfsc_to_pkg_dialog(self):
+        """Unpack a supported PS4 FFPFSC image and build a validated fake PKG."""
+        is_tr = self.lang_code() == "tr"
+        translate = lambda tr, en: tr if is_tr else en
+        dlg = tk.Toplevel(self)
+        dlg.title("FFPFSC → PS4 PKG")
+        dlg.geometry("810x560")
+        dlg.minsize(680, 460)
+        dlg.configure(bg="#121a27")
+        tk.Label(dlg, text="FFPFSC → PS4 PKG", bg="#121a27", fg="white",
+                 font=("Segoe UI", 18, "bold")).pack(anchor="w", padx=22, pady=(18, 4))
+        tk.Label(dlg, text=translate(
+            "Yalnızca PS4 FFPFSC (CUSA). PS5 oyunlarını PKG'ye dönüştürmez.",
+            "PS4 FFPFSC (CUSA) only. PS5 PKG building is not supported."),
+            bg="#121a27", fg="#e9b96e").pack(anchor="w", padx=22, pady=(0, 14))
+        values = [tk.StringVar(), tk.StringVar(), tk.StringVar(value=self.temp_dir_var.get().strip())]
+        bundled_builder = resource_path("tools/OrbisPkgTool.exe")
+        builder = tk.StringVar(value=bundled_builder if os.path.isfile(bundled_builder) else "")
+        form = tk.Frame(dlg, bg="#121a27")
+        form.pack(fill="x", padx=20)
+        rows = [
+            (translate("Kaynak .ffpfsc", "Source .ffpfsc"), values[0], "file"),
+            (translate("Çıktı .pkg", "Output .pkg"), values[1], "save"),
+            (translate("TEMP klasörü", "Temporary folder"), values[2], "folder"),
+            (translate("PS4 PKG oluşturucu", "PS4 PKG builder"), builder, "builder"),
+        ]
+        def browse(idx, kind):
+            if kind in ("file", "builder"):
+                path = filedialog.askopenfilename(
+                    parent=dlg, filetypes=[("FFPFSC image", "*.ffpfsc")] if kind == "file"
+                    else [("Windows executable", "*.exe")])
+            elif kind == "save":
+                path = filedialog.asksaveasfilename(
+                    parent=dlg, defaultextension=".pkg", filetypes=[("PS4 package", "*.pkg")])
+            else:
+                path = filedialog.askdirectory(parent=dlg)
+            if path:
+                rows[idx][1].set(path)
+                if idx == 0:
+                    candidate = str(Path(path).with_suffix(".pkg"))
+                    values[1].set(candidate)
+
+        for index, (caption, variable, kind) in enumerate(rows):
+            line = tk.Frame(form, bg="#121a27")
+            line.pack(fill="x", pady=4)
+            tk.Label(line, text=caption, width=20, anchor="w", bg="#121a27",
+                     fg="#cbd5e1").pack(side="left")
+            tk.Entry(line, textvariable=variable, bg="#e2e8f0", fg="#111827",
+                     font=("Segoe UI", 10)).pack(side="left", fill="x", expand=True, ipady=4)
+            tk.Button(line, text=translate("Seç", "Browse"),
+                      command=lambda i=index, k=kind: browse(i, k),
+                      bg="#334155", fg="white", width=9).pack(side="left", padx=(8, 0))
+        tk.Label(dlg, text=translate(
+            "PKG üretimi için TEMP'te geniş boş alan gerekir. Kaynak dosya değiştirilmez.",
+            "Large free TEMP space is required. The source image will not be modified."),
+            bg="#121a27", fg="#94a3b8").pack(anchor="w", padx=22, pady=(9, 2))
+        output_box = tk.Text(dlg, bg="#090f1b", fg="#cbd5e1",
+                             insertbackground="white", height=9, state="disabled",
+                             font=("Consolas", 9), wrap="word")
+        output_box.pack(fill="both", expand=True, padx=22, pady=(8, 10))
+        events = queue.Queue()
+        cancel = threading.Event()
+        working = [False]
+        footer = tk.Frame(dlg, bg="#121a27")
+        footer.pack(fill="x", padx=22, pady=(0, 16))
+        status = tk.StringVar(value=translate("Hazır", "Ready"))
+        tk.Label(footer, textvariable=status, bg="#121a27", fg="#a7f3d0").pack(side="left")
+        def on_close():
+            if working[0]:
+                cancel.set()
+                status.set(translate("İptal ediliyor...", "Cancelling..."))
+            else:
+                dlg.destroy()
+        dlg.protocol("WM_DELETE_WINDOW", on_close)
+        tk.Button(footer, text=translate("Kapat / İptal", "Close / Cancel"),
+                  command=on_close, bg="#334155", fg="white").pack(side="right")
+        def start():
+            if working[0]:
+                return
+            paths = [v.get().strip() for v in values]
+            if not paths[0] or not paths[1] or not paths[2] or not builder.get().strip():
+                messagebox.showerror("FFPFSC", translate(
+                    "Tüm dosya ve klasör alanlarını doldurun.",
+                    "Select the source, destination, TEMP folder and builder."), parent=dlg)
+                return
+            prefix = self._get_mkpfs_prefix()
+            if not prefix:
+                messagebox.showerror("MkPFS", "MkPFS is unavailable.", parent=dlg)
+                return
+            cancel.clear()
+            working[0] = True
+            action.configure(state="disabled")
+            status.set(translate("Çalışıyor...", "Converting..."))
+            def worker():
+                try:
+                    target = convert_ffpfsc_to_ps4_pkg(
+                        paths[0], paths[1], paths[2], prefix, builder.get().strip(),
+                        log=lambda msg: events.put(("log", msg)), cancel=cancel)
+                    events.put(("success", str(target)))
+                except Exception as exc:
+                    events.put(("error", str(exc)))
+            threading.Thread(target=worker, daemon=True).start()
+        action = tk.Button(footer, text=translate("PKG Oluştur", "Build PS4 PKG"),
+                           command=start, bg="#16a34a", fg="white",
+                           font=("Segoe UI", 10, "bold"))
+        action.pack(side="right", padx=(0, 10))
+        def poll():
+            if not dlg.winfo_exists():
+                return
+            while True:
+                try:
+                    event, data = events.get_nowait()
+                except queue.Empty:
+                    break
+                if event == "log":
+                    output_box.configure(state="normal")
+                    output_box.insert("end", data + "\n")
+                    output_box.see("end")
+                    output_box.configure(state="disabled")
+                else:
+                    working[0] = False
+                    action.configure(state="normal")
+                    if event == "success":
+                        status.set(translate("Tamamlandı", "Completed"))
+                        messagebox.showinfo("PS4 PKG", data, parent=dlg)
+                    else:
+                        status.set(translate("Hata / İptal", "Failed / Cancelled"))
+                        messagebox.showerror("PS4 PKG", data, parent=dlg)
+            dlg.after(120, poll)
+        dlg.after(120, poll)
 
     def show_ps4_merge_dialog(self):
         """Merge an extracted game/update pair, optionally extracting selected PS4 PKGs."""

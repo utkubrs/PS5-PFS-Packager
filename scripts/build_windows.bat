@@ -56,6 +56,8 @@ if exist "assets\completion.mp3" if exist "assets\error.mp3" (
   --windows-icon-from-ico=assets\appicon.ico ^
   --include-data-files=assets\appicon.ico=appicon.ico ^
   --include-data-files=tools\pkgextract.exe=tools/pkgextract.exe ^
+  --include-data-files=tools\OrbisPkgTool.exe=tools/OrbisPkgTool.exe ^
+  --include-data-files=tools\OrbisPkgTool.LICENSE.txt=tools/OrbisPkgTool.LICENSE.txt ^
   --output-dir=dist ^
   --output-filename=PS5-PFS-Packager.exe ^
   --include-package=mkpfs ^
@@ -63,6 +65,7 @@ if exist "assets\completion.mp3" if exist "assets\error.mp3" (
   --include-module=mkpfs.cli ^
   --include-module=native_exfat_mount ^
   --include-module=ps4_inputs ^
+  --include-module=ffpfsc_to_pkg ^
   --include-module=ps4_merge ^
   --include-module=ps4_cleanup ^
   --include-module=ps4_shadowmount_metadata ^

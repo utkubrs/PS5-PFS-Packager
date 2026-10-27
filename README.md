@@ -1,52 +1,71 @@
 # PS5 PFS Packager v1.0
 
-**Windows 10/11 (64 bit)** için PS4/PS5 oyun klasörleri, exFAT ve FFPFSC dosyalarıyla çalışan grafik arayüz. MkPFS 1.1.0 tabanlıdır. Kullanıcıya sunulan Windows sürümü **tek EXE** olarak derlenir; Python kurulumu gerekmez.
+Portable Windows 10/11 x64 GUI for converting PS5 game folders and raw exFAT images to FFPFSC, handling PS4 game/update merges, editing PS4 PARAM.SFO title fields, and **experimentally building PS4 fake PKGs from supported PS4 FFPFSC images**.
 
-**İndir:** [v1.0 tek EXE dosyasını indir](https://github.com/utkubrs/PS5-PFS-Packager/releases/download/v1.0/PS5-PFS-Packager.exe)
+[**Download PS5-PFS-Packager.exe**](https://github.com/utkubrs/PS5-PFS-Packager/releases/download/v1.0/PS5-PFS-Packager.exe) · [Release v1.0](https://github.com/utkubrs/PS5-PFS-Packager/releases/tag/v1.0)
 
-## Kurulum ve çalışma
+## Installation
 
-1. **PS5-PFS-Packager.exe** dosyasını indir.
-2. İstersen bilgisayarında **PS5 PFS Packager** klasörüne taşı.
-3. İndirdiğin EXE dosyasını çalıştır. Yönetici izni, sanal sürücü bağlama işlemlerinde gerekebilir.
-4. Kaynak klasör veya dosyayı, çıktı konumunu ve TEMP klasörünü seçerek dönüştürmeyi başlat.
+1. Download **PS5-PFS-Packager.exe** from the existing v1.0 release.
+2. Run it on Windows 10/11 x64. Administrative rights are needed for writable virtual-drive features.
+3. Select the game/image, output location, and a temporary working directory with sufficient free disk space.
+4. Keep source backups and test generated packages on your own compatible hardware.
 
-Kurulum dosyası değil, taşınabilir (portable) pakettir. EXE'nin yanında uygulama ayarlarını saklayan `ps5-pfs-config.ini` dosyası otomatik oluşturulabilir; kişisel ayarlarını korumak istiyorsan bu dosyayı sakla.
+The executable bundles Python runtime components, MkPFS 1.1.0, the PS4 PKG extractor and the open-source PS4 PKG builder. No Python or .NET installation is needed for the downloadable EXE. A local `ps5-pfs-config.ini` file may be generated for settings.
 
-## Özellikler
+## Features
 
-- PS5 oyun klasörü veya `.exfat` → `.ffpfsc` dönüştürme
-- PS4 temel oyun + güncelleme birleştirme, güncellemesiz PS4 oyun desteği, sıralı işlem kuyruğu; **özel oyun adı girildiğinde tüm mevcut `TITLE` ve `TITLE_XX` alanlarına uygulanır**
-- **PS4 kapak görseli düzeltme:** Birleştirme sırasında oyun kopyasında `sce_sys/pic0.png` veya `pic0.dds` yoksa ve karşılık gelen `pic1` dosyası varsa, `pic0` olarak yeniden adlandırılır. Mevcut `pic0` korunur, kaynak dosyaları değiştirilmez.
-- **Edit PARAM.SFO:** Mevcut `TITLE` ve `TITLE_XX` metin alanlarını ayrı ayrı veya toplu değiştirme; kaydetmeden önce `.bak` yedeği
-- İşlemci çekirdeği, sıkıştırma profili, blok ve TEMP ayarları
-- Çıktı doğrulama ve hata günlükleri; isteğe bağlı kaynak silme (yalnızca açıkça seçildiğinde)
-- exFAT/FFPFSC açma, düzenleme ve yeniden paketleme
-- 15 arayüz dili (Türkçe, English, Français, Español, Italiano, Ελληνικά, 한국어, 日本語, Deutsch, Português, Русский, 中文, العربية, Nederlands, Polski)
+- Convert supported PS5 folders and raw `.exfat` images into `.ffpfsc` containers.
+- Merge PS4 base game + optional update before FFPFSC conversion, with a FIFO job queue.
+- Preserve the base game artwork; if `pic0.png` or `pic0.dds` is missing inside the staging directory, rename the corresponding `pic1` image without editing source games.
+- Apply a custom PS4 game title to all existing `TITLE` and `TITLE_XX` text fields in the staged PARAM.SFO while preserving title/content IDs and version metadata.
+- Edit existing PARAM.SFO localized title fields individually or together, with an original-file backup.
+- Configure CPU, compression level, block size, TEMP paths, additional verification and optional cleanup.
+- Open and modify supported exFAT/FFPFSC images.
+- Switch between 15 interface languages, including Turkish and English.
 
-**Dağıtım:** Tek `PS5-PFS-Packager.exe` dosyası. ZIP veya ayrı DLL/PYD dosyası indirmek gerekmez. README ve GPL lisansı GitHub kaynak deposunda mevcuttur.
+## FFPFSC → PS4 PKG (experimental)
 
-Python bileşenleri, MkPFS ve PS4 PKG çıkarıcı EXE içine dahil edilir. Farklı `.dll`/`.pyd` dosyalarını ayrıca taşıman gerekmez. Ayrı `fakelib` dosyaları dağıtılmaz; bunlar yalnızca kullanıcı tarafından sağlanabilir.
+The new **FFPFSC → PS4 PKG** button converts a **supported PS4 game** image using this pipeline:
 
-**Önemli:** Oyun ve güncelleme klasörlerinin yedeğini sakla. İşlemleri yasal olarak sahip olduğun içeriklerde veya homebrew üzerinde yap. PS5/PS4 firmware, oyun, lisans anahtarı veya Sony'ye ait tescilli dosyalar dağıtıma eklenmez. Konsolda çalışma, Windows derleme testinden ayrı olarak doğrulanmalıdır.
+1. Select a PS4 `.ffpfsc` image (typically a CUSA title), output `.pkg` filename and TEMP folder.
+2. MkPFS deep-unpacks the image into a temporary game directory.
+3. The tool checks for `eboot.bin`, `sce_sys/param.sfo`, a CUSA title ID and standalone base-game `CATEGORY=gd`.
+4. The bundled OrbisPkgTool creates a strict GP4 project and builds and validates a PS4 fake PKG.
+5. After checking the PKG header and output size, the app copies the result to the chosen filename. The original FFPFSC image is not modified.
 
-## English / Quick start
+**Limitations and safety:**
 
-Download the [single Windows x64 EXE](https://github.com/utkubrs/PS5-PFS-Packager/releases/download/v1.0/PS5-PFS-Packager.exe) and run it. No ZIP extraction or Python installation is required. The repository contains the README and GPL license. Supports PS5 folder/exFAT conversion, PS4 base/update merging, automatic staged pic1-to-pic0 image fallback and FIFO queues, editable existing PARAM.SFO title fields with backups, 15 UI languages, and MkPFS 1.1.0. An external `fakelib` is optional and not distributed.
+- This is **not a PS5 FFPFSC → PS5 PKG converter**. PS5 game images contain different metadata and require a different builder. The converter stops with a clear message rather than producing an invalid PS4 PKG.
+- Encrypted retail sources are not decrypted. The input must already contain an unpackable game tree that you have the right to use.
+- The open-source PS4 PKG builder's output is **experimental** and has not been verified on a physical PlayStation console by this project. Successful packaging does not guarantee installation, launching or save compatibility.
+- Package output will **never overwrite** an existing `.pkg`. Temporary working files are removed after success and retained after failure to aid troubleshooting.
+- Sufficient temporary and output free space is required; large games may need considerably more space than the compressed input file.
+- Some FFPFSC containers are incompatible with PS4 GP4 packaging even when they unpack correctly.
 
-## Derleme / Build
+## Requirements and troubleshooting
 
-Sources are in `src/`, tests in `tests/`, and the Windows build entrypoint is `scripts/build_windows.bat`. GitHub Actions runs Windows tests and publishes the standalone EXE on `main`. The project is GPL-3.0 licensed: see `LICENSE`. Dependency acknowledgments: Python, Nuitka, Tkinter, MkPFS, psutil, cryptography and the pinned open-source `pkgextract` tool.
+- Windows 10/11 x64. Use an NTFS temporary folder, preferably on SSD/NVMe.
+- For PS4 packaging, the image must contain a **PS4 CUSA game** and a valid `sce_sys/param.sfo`; PS5 PPSA-only images are rejected.
+- If GP4 generation or PKG validation fails, inspect the dialog logs and the retained TEMP staging directory. Do not rename an `.ffpfsc` file to `.pkg` manually.
+- The downloadable EXE is unsigned, so Microsoft SmartScreen may display a warning. Compare the SHA-256 value shown in the v1.0 release description.
+- Actual PS4/PS5 console compatibility must be tested separately from GitHub Actions integration and synthetic tests.
 
-> Note: The release is unsigned; use the published `SHA256SUMS.txt` for verification. The executable extracts bundled runtime components into a temporary directory while running, but the distributed EXE has no loose runtime DLL/PYD files.
+## Build from source
 
+The GUI and converters are in `src/`; tests are in `tests/`. On Windows with Python 3.11 x64, use `scripts/build_windows.bat`. GitHub Actions compiles a single Windows executable and updates **the existing v1.0 release only**. It never creates a new release automatically.
 
-## Third-party notices / Üçüncü taraf lisansları
+The CI pipeline builds the pinned MIT-licensed OrbisPkgTool source (commit `5cd42a515dc29a453c7abcb93318493bdb5b5e1f`) for Windows x64, embeds its self-contained executable and MIT license notice, compiles the Python GUI with Nuitka, tests bundled tools, and publishes the one executable.
 
-- **MkPFS 1.1.0** (PSBrew/MkPFS): GPL-3.0, PFS/FFPFSC/exFAT işleme
-- **Python + Tkinter**: Python Software Foundation License
-- **Nuitka**: Apache-2.0
-- **psutil**: BSD-3-Clause
-- **cryptography**: Apache-2.0 / BSD
+## Legal and third-party notices
 
-Yukarıdaki projelerin güncel tam lisans metinleri için kendi kaynak depolarına bakınız. **PlayStation** ve **PS5**, Sony Interactive Entertainment markalarıdır. Proje Sony ile ilişkili veya Sony tarafından desteklenen bir ürün değildir. Bu yazılım yalnızca homebrew, araştırma ve yasal olarak sahip olunan içeriklerin yedeklenmesi için tasarlanmıştır. Hukuki sorumluluk kullanıcıya aittir.
+Use this software only for homebrew, research, preservation and backups of content you lawfully own. No games, Sony firmware, retail decryption keys, or proprietary console libraries are distributed. PS4, PS5 and PlayStation are trademarks of Sony Interactive Entertainment. This project is independent and is not endorsed by Sony.
+
+- **MkPFS 1.1.0** (PSBrew/MkPFS): GPL-3.0; FFPFSC/PFS image handling.
+- **OrbisPkgTool** (pearlxcore/OrbisPkgTool): MIT; experimental PS4 GP4 and fake-PKG building; MIT license is embedded in the executable as `tools/OrbisPkgTool.LICENSE.txt`.
+- **Python + Tkinter**: Python Software Foundation License.
+- **Nuitka**: Apache-2.0.
+- **psutil**: BSD-3-Clause.
+- **cryptography**: Apache-2.0/BSD.
+
+The repository itself is GPL-3.0-or-later. Consult upstream projects for full third-party license texts.

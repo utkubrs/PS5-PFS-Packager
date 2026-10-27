@@ -36,7 +36,11 @@ jobs:
 
       - name: Test PS4 input handling
         shell: pwsh
-        run: python -m unittest discover -s tests -p "test_ps4*.py" -v
+        run: |
+          python -m unittest discover -s tests -p "test_ps4*.py" -v
+          if ($LASTEXITCODE -ne 0) { throw 'PS4 tests failed' }
+          python -m unittest discover -s tests -p "test_ffpfsc_to_pkg.py" -v
+          if ($LASTEXITCODE -ne 0) { throw 'FFPFSC to PKG tests failed' }
 
       - name: Fetch pinned PS4 PKG extractor (Windows x64)
         shell: pwsh
@@ -56,9 +60,39 @@ jobs:
           }
           if (!(Test-Path 'tools/pkgextract.exe')) { throw 'Extractor verification failed' }
 
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Build pinned open-source PS4 PKG builder (.NET 10, self-contained)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $sha = '5cd42a515dc29a453c7abcb93318493bdb5b5e1f'
+          git clone --no-checkout https://github.com/pearlxcore/OrbisPkgTool.git orbis-src
+          git -C orbis-src checkout $sha
+          $actual = (git -C orbis-src rev-parse HEAD).Trim()
+          if ($actual -ne $sha) { throw 'Unpinned builder source revision' }
+          dotnet publish 'orbis-src/OrbisPkgTool/OrbisPkgTool.csproj' -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:PublishTrimmed=false -p:IncludeNativeLibrariesForSelfExtract=true -o 'orbis-out'
+          if ($LASTEXITCODE -ne 0) { throw 'OrbisPkgTool build failed' }
+          Copy-Item 'orbis-out/OrbisPkgTool.exe' 'tools/OrbisPkgTool.exe' -Force
+          Copy-Item 'orbis-src/LICENSE' 'tools/OrbisPkgTool.LICENSE.txt' -Force
+          $help = & 'tools/OrbisPkgTool.exe' --help 2>&1
+          if ($LASTEXITCODE -ne 0 -or ($help -join ' ') -notmatch 'gp4gen') { throw 'PS4 PKG CLI smoke test failed' }
+          Write-Host 'PS4 PKG builder ready, license notice included'
+
       - name: Build executable
         shell: cmd
         run: call scripts\build_windows.bat <nul
+
+      - name: Smoke test embedded PS4 PKG builder
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $cli = 'tools/OrbisPkgTool.exe'
+          if (!(Test-Path $cli)) { throw 'Builder missing' }
+          $output = & $cli gp4gen --help 2>&1
+          if ($LASTEXITCODE -ne 0 -or ($output -join ' ') -notmatch 'gp4') { throw 'PS4 GP4 generation not available' }
 
       - name: Smoke test bundled PKG extractor from isolated EXE
         shell: pwsh
@@ -248,6 +282,7 @@ jobs:
           $notes = @"
           PS5 PFS Packager v1.0 - Windows x64 portable standalone executable.
           
+          Added an experimental PS4-only FFPFSC to PKG conversion: MkPFS deep unpack, PS4 SFO validation, GP4 generation, and standalone PKG build with OrbisPkgTool. PS5 PKG building is not supported.
           PS4 Game + Update Merge: missing sce_sys/pic0.png or pic0.dds is repaired by renaming staged pic1.png or pic1.dds; existing pic0 remains untouched.
           Custom game names apply to all existing PARAM.SFO TITLE and TITLE_XX fields.
           TITLE_ID, CONTENT_ID, APP_VER and base/update source files remain untouched.
