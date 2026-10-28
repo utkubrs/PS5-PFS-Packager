@@ -20,7 +20,7 @@ if (!(Get-Command dotnet -ErrorAction SilentlyContinue)) {
     throw '.NET SDK 10 is required to compile the open-source GP4 helper.'
 }
 $versions = (& dotnet --list-sdks) -join ' '
-if ($versions -notmatch '10\\.0\\.') {
+if ($versions -notmatch '10\.0\.') {
     throw '.NET SDK 10 not found.'
 }
 $work = Join-Path $env:TEMP ('ps5_pfs_private_' + [guid]::NewGuid().ToString('N'))
@@ -77,7 +77,7 @@ try {
     }
     Push-Location $project
     try {
-        & cmd.exe /c 'call scripts\\build_windows.bat <nul'
+        & cmd.exe /c 'call scripts\build_windows.bat <nul'
         if ($LASTEXITCODE -ne 0) { throw 'Private standalone EXE build failed' }
     } finally { Pop-Location }
     $exe = Join-Path $project 'dist/ps5_pfs_packager.dist/PS5-PFS-Packager.exe'

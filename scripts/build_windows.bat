@@ -42,7 +42,7 @@ if exist "tools\Obris\orbis-pub-cmd.exe" (
   if not exist "tools\Obris\ext\sc.exe" goto :missing_orbis
   if not exist "tools\Obris\ext\di.exe" goto :missing_orbis
   if not exist "tools\Obris\ext\libatrac9.dll" goto :missing_orbis
-  set "ORBIS_ARGS=--include-data-dir=tools\Obris=tools/Obris"
+  set "ORBIS_ARGS=--include-data-files=tools\Obris\orbis-pub-cmd.exe=tools/Obris/orbis-pub-cmd.exe --include-data-files=tools\Obris\orbis-pub-prx.dll=tools/Obris/orbis-pub-prx.dll --include-data-files=tools\Obris\orbis-pub-gen.exe=tools/Obris/orbis-pub-gen.exe --include-data-files=tools\Obris\orbis-pub-chk.exe=tools/Obris/orbis-pub-chk.exe --include-data-files=tools\Obris\orbis-pub-sfo.exe=tools/Obris/orbis-pub-sfo.exe --include-data-files=tools\Obris\orbis-pub-trp.exe=tools/Obris/orbis-pub-trp.exe --include-data-files=tools\Obris\gengp4_app.exe=tools/Obris/gengp4_app.exe --include-data-files=tools\Obris\gengp4_patch.exe=tools/Obris/gengp4_patch.exe --include-data-files=tools\Obris\ext\sc.exe=tools/Obris/ext/sc.exe --include-data-files=tools\Obris\ext\di.exe=tools/Obris/ext/di.exe --include-data-files=tools\Obris\ext\libatrac9.dll=tools/Obris/ext/libatrac9.dll --include-data-files=tools\Obris\ext\trp_compare_default.css=tools/Obris/ext/trp_compare_default.css"
   echo [INFO] Private local build: user-supplied Orbis tools embedded.
 ) else (
   echo [INFO] Open-source-only build: no proprietary Orbis files bundled.
