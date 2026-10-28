@@ -261,7 +261,7 @@ jobs:
       - name: Update existing v1.0 release with PS5-PFS-Packager.exe
         # Public CI is source-only. It must never silently overwrite v1.0
         # with a binary pretending to include locally supplied publisher tools.
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && hashFiles('tools/Obris/orbis-pub-cmd.exe') != ''
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.ORBIS_REDISTRIBUTION_AUTHORIZED == 'approved' && hashFiles('tools/Obris/orbis-pub-cmd.exe') != ''
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
