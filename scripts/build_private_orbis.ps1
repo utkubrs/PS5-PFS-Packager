@@ -82,14 +82,20 @@ try {
     } finally { Pop-Location }
     $exe = Join-Path $project 'dist/ps5_pfs_packager.dist/PS5-PFS-Packager.exe'
     if (!(Test-Path $exe)) { throw 'Missing resulting PS5-PFS-Packager.exe' }
-    $out = Join-Path $work 'orbis-check.out'
-    $err = Join-Path $work 'orbis-check.err'
-    $proc = Start-Process -FilePath $exe -ArgumentList '--check-orbis-bundle' -RedirectStandardOutput $out -RedirectStandardError $err -Wait -PassThru
-    $diagnostic = (Get-Content $out -Raw -ErrorAction SilentlyContinue) + (Get-Content $err -Raw -ErrorAction SilentlyContinue)
-    if ($proc.ExitCode -ne 0 -or $diagnostic -notmatch 'ORBIS_BUNDLE_OK:') {
-        throw "Private EXE did not pass embedded Orbis verification: $diagnostic"
+    # Nuitka builds the GUI with a requireAdministrator manifest.
+    # Start-Process without -Verb RunAs fails with ERROR_ELEVATION_REQUIRED
+    # (740); -Verb RunAs needs no parent admin session, but does show UAC.
+    Write-Host 'Checking embedded Orbis tools (approve the Windows UAC prompt)...' -ForegroundColor Cyan
+    try {
+        $proc = Start-Process -FilePath $exe -ArgumentList '--check-orbis-bundle' -Verb RunAs -Wait -PassThru
     }
-    Write-Host $diagnostic -ForegroundColor Green
+    catch {
+        throw "Embedded Orbis verification could not start with administrator rights: $($_.Exception.Message)"
+    }
+    if ($proc.ExitCode -ne 0) {
+        throw "Private EXE embedded Orbis verification failed (exit code: $($proc.ExitCode))."
+    }
+    Write-Host '[OK] Embedded Orbis Publisher Tools verified in standalone EXE.' -ForegroundColor Green
     Write-Host "SINGLE EXE READY: $exe" -ForegroundColor Green
     Write-Host ('SHA256: ' + (Get-FileHash $exe -Algorithm SHA256).Hash)
     Write-Host 'This executable includes your private Orbis tools. Do not publish without redistribution rights.' -ForegroundColor Yellow
