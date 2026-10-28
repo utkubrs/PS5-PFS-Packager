@@ -96,6 +96,8 @@ class FfpfscToPkgTest(unittest.TestCase):
             exe = root / "orbis-pub-cmd.exe"
             exe.write_bytes(b"mock")
             (root / "ext").mkdir()
+            (root / "ext" / "sc.exe").touch()
+            (root / "orbis-pub-prx.dll").touch()
             generator = root / "OrbisPkgTool.exe"
             generator.write_bytes(b"mock")
             source = image_at(root / "game.ffpfsc")
