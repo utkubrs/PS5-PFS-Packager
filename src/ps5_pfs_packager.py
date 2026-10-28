@@ -8489,6 +8489,19 @@ def main():
     if len(sys.argv) >= 2 and sys.argv[1] == "--internal-mkpfs":
         sys.exit(run_internal_mkpfs(sys.argv[2:]))
 
+    # Private portable builds embed Orbis tools only from a user-provided archive.
+    if len(sys.argv) >= 2 and sys.argv[1] == "--check-orbis-bundle":
+        _ensure_child_standard_streams()
+        candidate = resource_path("tools/Obris/orbis-pub-cmd.exe")
+        from ffpfsc_to_pkg import validate_orbis_pub_cmd
+        try:
+            tool = validate_orbis_pub_cmd(candidate)
+            print("ORBIS_BUNDLE_OK: " + str(tool), flush=True)
+            sys.exit(0)
+        except Exception as exc:
+            print("ORBIS_BUNDLE_MISSING: " + str(exc), flush=True)
+            sys.exit(5)
+
     # A non-interactive diagnostic is exercised on the BUILT Windows EXE in CI.
     # It checks precisely the path resolution used by the merge dialog.
     if len(sys.argv) >= 2 and sys.argv[1] == "--check-pkg-extractor":

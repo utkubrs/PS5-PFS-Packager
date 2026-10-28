@@ -259,7 +259,9 @@ jobs:
           if-no-files-found: error
 
       - name: Update existing v1.0 release with PS5-PFS-Packager.exe
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        # Public CI is source-only. It must never silently overwrite v1.0
+        # with a binary pretending to include locally supplied publisher tools.
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && hashFiles('tools/Obris/orbis-pub-cmd.exe') != ''
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -282,7 +284,7 @@ jobs:
           $notes = @"
           PS5 PFS Packager v1.0 - Windows x64 portable standalone executable.
           
-          PS4 FFPFSC to PKG: MkPFS deep unpack, PS4 SFO validation, automatic GP4 generation with embedded open-source OrbisPkgTool, and PKG building through the user's own installed orbis-pub-cmd.exe and ext directory. Sony Orbis tools are not bundled. PS5 PKG building is not supported.
+          PS4 FFPFSC to PKG: MkPFS unpack, automatic GP4 generation, and build using installed or privately embedded Orbis Publisher Tools. Sony's proprietary tools are not redistributed by public CI. PS5 PKG building is unsupported.
           PS4 Game + Update Merge: missing sce_sys/pic0.png or pic0.dds is repaired by renaming staged pic1.png or pic1.dds; existing pic0 remains untouched.
           Custom game names apply to all existing PARAM.SFO TITLE and TITLE_XX fields.
           TITLE_ID, CONTENT_ID, APP_VER and base/update source files remain untouched.

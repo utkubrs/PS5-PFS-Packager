@@ -48,6 +48,8 @@ class FfpfscToPkgTest(unittest.TestCase):
             exe = root / "orbis-pub-cmd.exe"
             exe.write_bytes(b"mock external Orbis CLI")
             (root / "ext").mkdir()
+            (root / "ext" / "sc.exe").touch()
+            (root / "orbis-pub-prx.dll").touch()
             generator = root / "OrbisPkgTool.exe"
             generator.write_bytes(b"mock GP4 generator")
             calls = []
@@ -111,6 +113,8 @@ class FfpfscToPkgTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "ext"):
                 validate_orbis_pub_cmd(exe)
             (Path(d) / "ext").mkdir()
+            (Path(d) / "ext" / "sc.exe").touch()
+            (Path(d) / "orbis-pub-prx.dll").touch()
             self.assertEqual(validate_orbis_pub_cmd(exe), exe.resolve())
 
     def test_gp4_rejects_path_traversal(self):

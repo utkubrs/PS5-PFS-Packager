@@ -36,6 +36,17 @@ echo [4/4] Preparing application icon...
 if errorlevel 1 goto :error
 
 echo [4/4] Building portable standalone EXE with Nuitka...
+set "ORBIS_ARGS="
+if exist "tools\Obris\orbis-pub-cmd.exe" (
+  if not exist "tools\Obris\orbis-pub-prx.dll" goto :missing_orbis
+  if not exist "tools\Obris\ext\sc.exe" goto :missing_orbis
+  if not exist "tools\Obris\ext\di.exe" goto :missing_orbis
+  if not exist "tools\Obris\ext\libatrac9.dll" goto :missing_orbis
+  set "ORBIS_ARGS=--include-data-dir=tools\Obris=tools/Obris"
+  echo [INFO] Private local build: user-supplied Orbis tools embedded.
+) else (
+  echo [INFO] Open-source-only build: no proprietary Orbis files bundled.
+)
 set "SOUND_ARGS="
 if exist "assets\completion.mp3" if exist "assets\error.mp3" (
   set "SOUND_ARGS=--include-data-files=assets\completion.mp3=completion.mp3 --include-data-files=assets\error.mp3=error.mp3"
@@ -52,6 +63,7 @@ if exist "assets\completion.mp3" if exist "assets\error.mp3" (
   --enable-plugin=tk-inter ^
   --windows-console-mode=disable ^
   %SOUND_ARGS% ^
+  %ORBIS_ARGS% ^
   --windows-uac-admin ^
   --windows-icon-from-ico=assets\appicon.ico ^
   --include-data-files=assets\appicon.ico=appicon.ico ^
@@ -93,6 +105,10 @@ if not exist "dist\ps5_pfs_packager.dist\PS5-PFS-Packager.exe" goto :error
 echo [DONE] dist\ps5_pfs_packager.dist\PS5-PFS-Packager.exe
 pause
 exit /b 0
+
+:missing_orbis
+echo [ERROR] Local Orbis bundle incomplete. Verify your Obris.zip archive.
+exit /b 1
 
 :error
 echo.

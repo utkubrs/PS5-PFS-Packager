@@ -17,6 +17,9 @@ ps5-pfs-config.ini
 PS5PFS-MountSessions/
 release/*.zip
 release/*.exe
+tools/Obris/
+Obris.zip
+**/Obris.zip
 fakelib/*.sprx
 !fakelib/README.md
 .DS_Store

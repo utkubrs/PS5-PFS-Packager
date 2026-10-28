@@ -43,6 +43,10 @@ def validate_orbis_pub_cmd(executable: str | Path) -> Path:
         raise ValueError("Select the local orbis-pub-cmd.exe (not OrbisPkgTool.exe).")
     if not (path.parent / "ext").is_dir():
         raise ValueError("Orbis Publisher Tools 'ext' directory is missing next to orbis-pub-cmd.exe.")
+    if not (path.parent / "orbis-pub-prx.dll").is_file():
+        raise ValueError("Orbis publisher DLL is missing next to orbis-pub-cmd.exe.")
+    if not (path.parent / "ext" / "sc.exe").is_file():
+        raise ValueError("Orbis publishing backend ext/sc.exe is missing.")
     return path
 
 

@@ -38,6 +38,18 @@ The executable bundles Python runtime components, MkPFS 1.1.0, the PS4 PKG extra
 
 This converter supports PS4 base-game content only, not native PS5 packages, and it does not decrypt retail games. Large TEMP capacity is needed. Console compatibility remains to be checked per output.
 
+
+## Build a private single EXE with your own Orbis archive
+
+The public v1.0 release does not redistribute Sony's proprietary Orbis Publisher Tools. If you have lawful access to them, use your own ZIP to make a **private, fully self-contained** Windows EXE. It extracts its bundled Orbis command, DLL and `ext/` helpers automatically at runtime, so the target Windows computer does not need an Orbis folder.
+
+1. On a Windows build PC, have Python 3.11 x64, Git, and .NET SDK 10 available.
+2. Put your local archive `Obris.zip` somewhere accessible (do **not** commit it to the public repository).
+3. Run `powershell -ExecutionPolicy Bypass -File scripts/build_private_orbis.ps1 -Archive 'C:\path\Obris.zip'` from the repository directory. This prepares the locally supplied Orbis tools and the open-source helper dependencies, then builds a single EXE.
+4. Output: `dist/ps5_pfs_packager.dist/PS5-PFS-Packager.exe`. Do not redistribute the private binary without the necessary rights to its embedded components.
+
+There will only be **one existing v1.0 release with one PS5-PFS-Packager.exe asset**. Public GitHub CI does not publish proprietary files or make new release versions.
+
 ## Requirements and troubleshooting
 
 - Windows 10/11 x64. Use an NTFS temporary folder, preferably on SSD/NVMe.
