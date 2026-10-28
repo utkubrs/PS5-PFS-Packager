@@ -3613,7 +3613,7 @@ from ps4_inputs import is_ps4_game_folder, detect_ps4_title_id, inspect_ps4_sour
 from ps4_merge import merge_ps4_folders, edit_sfo_title, edit_sfo_text_fields, sfo_fields
 from ps4_merge_i18n import merge_text
 from ps4_cleanup import cleanup_ps4_temp
-from ffpfsc_to_pkg import convert_ffpfsc_to_ps4_pkg, ConversionCancelled
+from ffpfsc_to_pkg import convert_ffpfsc_to_ps4_pkg, ConversionCancelled, detect_orbis_pub_cmd
 from ps4_shadowmount_metadata import prepare_ps4_shadowmount_metadata, prepare_existing_temp_merge, ffpfsc_outer_pfs_profile, validate_ffpfsc_outer_header
 
 class App(tk.Tk):
@@ -6690,13 +6690,13 @@ class App(tk.Tk):
             self.after(0, failed)
 
     def show_ffpfsc_to_pkg_dialog(self):
-        """Unpack a supported PS4 FFPFSC image and build a validated fake PKG."""
+        """Unpack PS4 FFPFSC, create GP4, and build with local Orbis Publisher Tools."""
         is_tr = self.lang_code() == "tr"
         translate = lambda tr, en: tr if is_tr else en
         dlg = tk.Toplevel(self)
         dlg.title("FFPFSC → PS4 PKG")
-        dlg.geometry("810x560")
-        dlg.minsize(680, 460)
+        dlg.geometry("900x570")
+        dlg.minsize(750, 480)
         dlg.configure(bg="#121a27")
         tk.Label(dlg, text="FFPFSC → PS4 PKG", bg="#121a27", fg="white",
                  font=("Segoe UI", 18, "bold")).pack(anchor="w", padx=22, pady=(18, 4))
@@ -6705,15 +6705,15 @@ class App(tk.Tk):
             "PS4 FFPFSC (CUSA) only. PS5 PKG building is not supported."),
             bg="#121a27", fg="#e9b96e").pack(anchor="w", padx=22, pady=(0, 14))
         values = [tk.StringVar(), tk.StringVar(), tk.StringVar(value=self.temp_dir_var.get().strip())]
-        bundled_builder = resource_path("tools/OrbisPkgTool.exe")
-        builder = tk.StringVar(value=bundled_builder if os.path.isfile(bundled_builder) else "")
+        bundled_generator = resource_path("tools/OrbisPkgTool.exe")
+        orbis = tk.StringVar(value=getattr(self, "_orbis_pub_cmd_path", "") or detect_orbis_pub_cmd())
         form = tk.Frame(dlg, bg="#121a27")
         form.pack(fill="x", padx=20)
         rows = [
             (translate("Kaynak .ffpfsc", "Source .ffpfsc"), values[0], "file"),
             (translate("Çıktı .pkg", "Output .pkg"), values[1], "save"),
             (translate("TEMP klasörü", "Temporary folder"), values[2], "folder"),
-            (translate("PS4 PKG oluşturucu", "PS4 PKG builder"), builder, "builder"),
+            (translate("Orbis Publisher Tools", "Orbis Publisher Tools"), orbis, "builder"),
         ]
         def browse(idx, kind):
             if kind in ("file", "builder"):
@@ -6742,8 +6742,8 @@ class App(tk.Tk):
                       command=lambda i=index, k=kind: browse(i, k),
                       bg="#334155", fg="white", width=9).pack(side="left", padx=(8, 0))
         tk.Label(dlg, text=translate(
-            "PKG üretimi için TEMP'te geniş boş alan gerekir. Kaynak dosya değiştirilmez.",
-            "Large free TEMP space is required. The source image will not be modified."),
+            "GP4 otomatik hazırlanır. PKG için kendi Orbis SDK'nızdaki orbis-pub-cmd.exe ve ext klasörü gerekir.",
+            "GP4 is created automatically. Building requires your local orbis-pub-cmd.exe and adjacent ext folder."),
             bg="#121a27", fg="#94a3b8").pack(anchor="w", padx=22, pady=(9, 2))
         output_box = tk.Text(dlg, bg="#090f1b", fg="#cbd5e1",
                              insertbackground="white", height=9, state="disabled",
@@ -6769,15 +6769,21 @@ class App(tk.Tk):
             if working[0]:
                 return
             paths = [v.get().strip() for v in values]
-            if not paths[0] or not paths[1] or not paths[2] or not builder.get().strip():
+            if not paths[0] or not paths[1] or not paths[2] or not orbis.get().strip():
                 messagebox.showerror("FFPFSC", translate(
-                    "Tüm dosya ve klasör alanlarını doldurun.",
-                    "Select the source, destination, TEMP folder and builder."), parent=dlg)
+                    "Kaynak, çıktı, TEMP ve orbis-pub-cmd.exe seçin.",
+                    "Select the source, destination, TEMP folder and orbis-pub-cmd.exe."), parent=dlg)
+                return
+            if not os.path.isfile(bundled_generator):
+                messagebox.showerror("GP4", translate(
+                    "Dahili GP4 oluşturucu bulunamadı.",
+                    "Bundled GP4 generator was not found."), parent=dlg)
                 return
             prefix = self._get_mkpfs_prefix()
             if not prefix:
                 messagebox.showerror("MkPFS", "MkPFS is unavailable.", parent=dlg)
                 return
+            self._orbis_pub_cmd_path = orbis.get().strip()
             cancel.clear()
             working[0] = True
             action.configure(state="disabled")
@@ -6785,8 +6791,9 @@ class App(tk.Tk):
             def worker():
                 try:
                     target = convert_ffpfsc_to_ps4_pkg(
-                        paths[0], paths[1], paths[2], prefix, builder.get().strip(),
-                        log=lambda msg: events.put(("log", msg)), cancel=cancel)
+                        paths[0], paths[1], paths[2], prefix, orbis.get().strip(),
+                        log=lambda msg: events.put(("log", msg)), cancel=cancel,
+                        gp4_generator=bundled_generator)
                     events.put(("success", str(target)))
                 except Exception as exc:
                     events.put(("error", str(exc)))

@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from ffpfsc_to_pkg import (inspect_ffpfsc, find_ps4_game_root,
-                           convert_ffpfsc_to_ps4_pkg, PKG_MAGIC)
+                           convert_ffpfsc_to_ps4_pkg, prepare_gp4_for_orbis,\n                           validate_orbis_pub_cmd, PKG_MAGIC)
 from test_ps4_merge import make_sfo
 
 
@@ -44,8 +44,11 @@ class FfpfscToPkgTest(unittest.TestCase):
             output.mkdir()
             source = image_at(root / "game.ffpfsc")
             original = source.read_bytes()
-            exe = root / "OrbisPkgTool.exe"
-            exe.write_bytes(b"mock external CLI")
+            exe = root / "orbis-pub-cmd.exe"
+            exe.write_bytes(b"mock external Orbis CLI")
+            (root / "ext").mkdir()
+            generator = root / "OrbisPkgTool.exe"
+            generator.write_bytes(b"mock GP4 generator")
             calls = []
             def run(cmd):
                 calls.append(cmd)
@@ -61,13 +64,14 @@ class FfpfscToPkgTest(unittest.TestCase):
                     Path(cmd[cmd.index("--out") + 1]).write_bytes(PKG_MAGIC + b"\0" * 2048)
             pkg = output / "game.pkg"
             result = convert_ffpfsc_to_ps4_pkg(source, pkg, temp,
-                                               ["mkpfs"], exe, command_runner=run)
+                                               ["mkpfs"], exe, command_runner=run,
+                                               gp4_generator=generator)
             self.assertEqual(result.resolve(), pkg.resolve())
             self.assertEqual(pkg.read_bytes()[:4], PKG_MAGIC)
             self.assertEqual(len(calls), 3)
             self.assertEqual(calls[1][1], "gp4gen")
-            self.assertEqual(calls[2][1], "build")
-            self.assertIn("--validate", calls[2])
+            self.assertEqual(calls[2][1], "img_create")
+            self.assertEqual(calls[2][2:4], ["--oformat", "pkg"])
             self.assertEqual(source.read_bytes(), original)
             self.assertFalse(list(temp.glob("ffpfsc_ps4_pkg_*")))
 
@@ -76,14 +80,41 @@ class FfpfscToPkgTest(unittest.TestCase):
             root = Path(d)
             temp = root / "temp"
             temp.mkdir()
-            exe = root / "OrbisPkgTool.exe"
+            exe = root / "orbis-pub-cmd.exe"
             exe.write_bytes(b"mock")
+            (root / "ext").mkdir()
+            generator = root / "OrbisPkgTool.exe"
+            generator.write_bytes(b"mock")
             source = image_at(root / "game.ffpfsc")
             output = root / "game.pkg"
             output.write_bytes(b"original")
             with self.assertRaises(FileExistsError):
-                convert_ffpfsc_to_ps4_pkg(source, output, temp, ["mkpfs"], exe)
+                convert_ffpfsc_to_ps4_pkg(source, output, temp, ["mkpfs"], exe,
+                                           gp4_generator=generator)
             self.assertEqual(output.read_bytes(), b"original")
+
+    def test_orbis_sdk_requires_ext(self):
+        with tempfile.TemporaryDirectory() as d:
+            exe = Path(d) / "orbis-pub-cmd.exe"
+            exe.touch()
+            with self.assertRaisesRegex(ValueError, "ext"):
+                validate_orbis_pub_cmd(exe)
+            (Path(d) / "ext").mkdir()
+            self.assertEqual(validate_orbis_pub_cmd(exe), exe.resolve())
+
+    def test_gp4_rejects_path_traversal(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            game = root / "game"
+            game.mkdir()
+            gp4 = root / "test.gp4"
+            gp4.write_text(
+                '<psproject><volume><volume_type>pkg_ps4_app</volume_type>'
+                '<package content_id="TEST"/></volume><files>'
+                '<file targ_path="../outside.bin" orig_path="../outside.bin"/>'
+                '</files></psproject>')
+            with self.assertRaisesRegex(ValueError, "Unsafe"):
+                prepare_gp4_for_orbis(gp4, game)
 
     def test_no_ps4_game_tree_rejected(self):
         with tempfile.TemporaryDirectory() as d:

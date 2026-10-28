@@ -64,7 +64,7 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      - name: Build pinned open-source PS4 PKG builder (.NET 10, self-contained)
+      - name: Build pinned open-source GP4 generator (.NET 10, self-contained)
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -79,18 +79,18 @@ jobs:
           Copy-Item 'orbis-src/LICENSE' 'tools/OrbisPkgTool.LICENSE.txt' -Force
           $help = & 'tools/OrbisPkgTool.exe' --help 2>&1
           if ($LASTEXITCODE -ne 0 -or ($help -join ' ') -notmatch 'gp4gen') { throw 'PS4 PKG CLI smoke test failed' }
-          Write-Host 'PS4 PKG builder ready, license notice included'
+          Write-Host 'PS4 GP4 generator ready, license notice included'
 
       - name: Build executable
         shell: cmd
         run: call scripts\build_windows.bat <nul
 
-      - name: Smoke test embedded PS4 PKG builder
+      - name: Smoke test embedded GP4 generator
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $cli = 'tools/OrbisPkgTool.exe'
-          if (!(Test-Path $cli)) { throw 'Builder missing' }
+          if (!(Test-Path $cli)) { throw 'GP4 generator missing' }
           $output = & $cli gp4gen --help 2>&1
           if ($LASTEXITCODE -ne 0 -or ($output -join ' ') -notmatch 'gp4') { throw 'PS4 GP4 generation not available' }
 
@@ -282,7 +282,7 @@ jobs:
           $notes = @"
           PS5 PFS Packager v1.0 - Windows x64 portable standalone executable.
           
-          Added an experimental PS4-only FFPFSC to PKG conversion: MkPFS deep unpack, PS4 SFO validation, GP4 generation, and standalone PKG build with OrbisPkgTool. PS5 PKG building is not supported.
+          PS4 FFPFSC to PKG: MkPFS deep unpack, PS4 SFO validation, automatic GP4 generation with embedded open-source OrbisPkgTool, and PKG building through the user's own installed orbis-pub-cmd.exe and ext directory. Sony Orbis tools are not bundled. PS5 PKG building is not supported.
           PS4 Game + Update Merge: missing sce_sys/pic0.png or pic0.dds is repaired by renaming staged pic1.png or pic1.dds; existing pic0 remains untouched.
           Custom game names apply to all existing PARAM.SFO TITLE and TITLE_XX fields.
           TITLE_ID, CONTENT_ID, APP_VER and base/update source files remain untouched.

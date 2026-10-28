@@ -11,7 +11,7 @@ Portable Windows 10/11 x64 GUI for converting PS5 game folders and raw exFAT ima
 3. Select the game/image, output location, and a temporary working directory with sufficient free disk space.
 4. Keep source backups and test generated packages on your own compatible hardware.
 
-The executable bundles Python runtime components, MkPFS 1.1.0, the PS4 PKG extractor and the open-source PS4 PKG builder. No Python or .NET installation is needed for the downloadable EXE. A local `ps5-pfs-config.ini` file may be generated for settings.
+The executable bundles Python runtime components, MkPFS 1.1.0, the PS4 PKG extractor and the open-source GP4 generator (OrbisPkgTool). The Orbis Publisher Tools PKG builder must be supplied separately by the user. No Python or .NET installation is needed for the downloadable EXE. A local `ps5-pfs-config.ini` file may be generated for settings.
 
 ## Features
 
@@ -24,24 +24,19 @@ The executable bundles Python runtime components, MkPFS 1.1.0, the PS4 PKG extra
 - Open and modify supported exFAT/FFPFSC images.
 - Switch between 15 interface languages, including Turkish and English.
 
-## FFPFSC → PS4 PKG (experimental)
+## FFPFSC → PS4 PKG (Orbis Publisher Tools)
 
-The new **FFPFSC → PS4 PKG** button converts a **supported PS4 game** image using this pipeline:
+**User-verified console test:** A PS4 base game + merged update packed into FFPFSC ran with ShadowMountPlus; the independently built Orbis Publisher Tools 3.87 PKG of the same source installed and launched on a PS5 Pro (FW 10.01). The earlier all-open-source OrbisPkgTool-built PKG was rejected with CE-118872-7. This does not yet establish that the *new automated GP4 pipeline* produces console-installable PKGs; please test it.
 
-1. Select a PS4 `.ffpfsc` image (typically a CUSA title), output `.pkg` filename and TEMP folder.
-2. MkPFS deep-unpacks the image into a temporary game directory.
-3. The tool checks for `eboot.bin`, `sce_sys/param.sfo`, a CUSA title ID and standalone base-game `CATEGORY=gd`.
-4. The bundled OrbisPkgTool creates a strict GP4 project and builds and validates a PS4 fake PKG.
-5. After checking the PKG header and output size, the app copies the result to the chosen filename. The original FFPFSC image is not modified.
+1. Select a PS4 `.ffpfsc` image, output `.pkg` file, and a TEMP folder with ample space.
+2. Select your **locally installed** `orbis-pub-cmd.exe`. Its sibling `ext/` directory must exist. The app can auto-detect a common `Desktop/Playstation Araçları/Obris` installation.
+3. MkPFS extracts the image; the tool checks `eboot.bin`, `sce_sys/param.sfo`, CUSA title ID, and `CATEGORY=gd`.
+4. The bundled **open-source OrbisPkgTool** generates a `--strict-gengp4` project. Paths are rebound to the temporary extraction directory.
+5. The installed **Orbis Publisher Tools** CLI builds the actual PKG via `img_create --oformat pkg <project.gp4> <output_directory>`. Exactly one output package and its magic header are checked, and it is safely copied to the selected destination.
 
-**Limitations and safety:**
+**Important:** Sony Orbis Publisher Tools executables and proprietary dependencies are **not included** in the release or repository; users must supply their own lawful installation. Neither the user's source image nor an existing destination package is overwritten. Failed staging is retained for diagnostics; successful staging is removed.
 
-- This is **not a PS5 FFPFSC → PS5 PKG converter**. PS5 game images contain different metadata and require a different builder. The converter stops with a clear message rather than producing an invalid PS4 PKG.
-- Encrypted retail sources are not decrypted. The input must already contain an unpackable game tree that you have the right to use.
-- The open-source PS4 PKG builder's output is **experimental** and has not been verified on a physical PlayStation console by this project. Successful packaging does not guarantee installation, launching or save compatibility.
-- Package output will **never overwrite** an existing `.pkg`. Temporary working files are removed after success and retained after failure to aid troubleshooting.
-- Sufficient temporary and output free space is required; large games may need considerably more space than the compressed input file.
-- Some FFPFSC containers are incompatible with PS4 GP4 packaging even when they unpack correctly.
+This converter supports PS4 base-game content only, not native PS5 packages, and it does not decrypt retail games. Large TEMP capacity is needed. Console compatibility remains to be checked per output.
 
 ## Requirements and troubleshooting
 
@@ -55,14 +50,14 @@ The new **FFPFSC → PS4 PKG** button converts a **supported PS4 game** image us
 
 The GUI and converters are in `src/`; tests are in `tests/`. On Windows with Python 3.11 x64, use `scripts/build_windows.bat`. GitHub Actions compiles a single Windows executable and updates **the existing v1.0 release only**. It never creates a new release automatically.
 
-The CI pipeline builds the pinned MIT-licensed OrbisPkgTool source (commit `5cd42a515dc29a453c7abcb93318493bdb5b5e1f`) for Windows x64, embeds its self-contained executable and MIT license notice, compiles the Python GUI with Nuitka, tests bundled tools, and publishes the one executable.
+The CI pipeline builds the pinned MIT-licensed OrbisPkgTool GP4 generator source (commit `5cd42a515dc29a453c7abcb93318493bdb5b5e1f`) for Windows x64, embeds its self-contained executable and MIT license notice, compiles the Python GUI with Nuitka, tests bundled tools, and publishes the one executable.
 
 ## Legal and third-party notices
 
 Use this software only for homebrew, research, preservation and backups of content you lawfully own. No games, Sony firmware, retail decryption keys, or proprietary console libraries are distributed. PS4, PS5 and PlayStation are trademarks of Sony Interactive Entertainment. This project is independent and is not endorsed by Sony.
 
 - **MkPFS 1.1.0** (PSBrew/MkPFS): GPL-3.0; FFPFSC/PFS image handling.
-- **OrbisPkgTool** (pearlxcore/OrbisPkgTool): MIT; experimental PS4 GP4 and fake-PKG building; MIT license is embedded in the executable as `tools/OrbisPkgTool.LICENSE.txt`.
+- **OrbisPkgTool** (pearlxcore/OrbisPkgTool): MIT; strict GP4 generation only in the conversion pipeline. Its MIT license is embedded in the executable as `tools/OrbisPkgTool.LICENSE.txt`.\n- **Orbis Publisher Tools** (user-installed): external PKG building; not redistributed.
 - **Python + Tkinter**: Python Software Foundation License.
 - **Nuitka**: Apache-2.0.
 - **psutil**: BSD-3-Clause.

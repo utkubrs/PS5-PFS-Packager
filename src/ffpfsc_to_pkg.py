@@ -1,12 +1,14 @@
-"""PS4 FFPFSC to FPKG conversion through MkPFS and OrbisPkgTool.
+"""PS4 FFPFSC to FPKG: MkPFS unpack, open-source GP4 generation, Orbis build.
 
-This is a PS4-only pipeline. No retail decryption, PS5 PKG building,
-or guarantee of console compatibility is provided.
+Orbis Publisher Tools are supplied by the user and are never redistributed.
+This is PS4-only; retail decryption and PS5 PKG building are unsupported.
 """
 from __future__ import annotations
 
 import os
 from pathlib import Path
+import re
+import xml.etree.ElementTree as ET
 import queue
 import shutil
 import struct
@@ -19,6 +21,68 @@ from ps4_merge import sfo_fields
 PFS_MAGIC = 20130315
 PS5_OUTER_PFS_VERSION = 2
 PKG_MAGIC = b"\x7fCNT"
+
+
+def detect_orbis_pub_cmd() -> str:
+    """Locate a user-installed Orbis Publisher Tools directory, never bundled."""
+    home = Path.home()
+    roots = [home / "Desktop", home / "OneDrive" / "Desktop"]
+    for root in roots:
+        for spelling in ("Playstation Araçları", "PlayStation Araçları", "Playstation Araclari"):
+            for folder in ("Obris", "Orbis"):
+                candidate = root / spelling / folder / "orbis-pub-cmd.exe"
+                if candidate.is_file() and (candidate.parent / "ext").is_dir():
+                    return str(candidate)
+    return ""
+
+
+def validate_orbis_pub_cmd(executable: str | Path) -> Path:
+    """Require the actual Sony Orbis CLI and its adjacent ext directory."""
+    path = Path(executable).expanduser().resolve()
+    if path.name.lower() != "orbis-pub-cmd.exe" or not path.is_file():
+        raise ValueError("Select the local orbis-pub-cmd.exe (not OrbisPkgTool.exe).")
+    if not (path.parent / "ext").is_dir():
+        raise ValueError("Orbis Publisher Tools 'ext' directory is missing next to orbis-pub-cmd.exe.")
+    return path
+
+
+def prepare_gp4_for_orbis(gp4_file: str | Path, game_dir: str | Path) -> int:
+    """Rebase strict GP4 file references to absolute paths under unpacked staging.
+
+    Orbis CLI receives only a GP4 path (unlike OrbisPkgTool's build subcommand,
+    which receives both the GP4 path and game directory), so relative orig_path
+    values otherwise point at the wrong folder.
+    """
+    gp4 = Path(gp4_file)
+    game = Path(game_dir).resolve()
+    tree = ET.parse(gp4)
+    root = tree.getroot()
+    if root.tag != "psproject" or root.find("volume/package") is None:
+        raise ValueError("Generated GP4 has no PS4 package metadata.")
+    if root.findtext("volume/volume_type") != "pkg_ps4_app":
+        raise ValueError("Only PS4 application GP4 projects can be built.")
+    files = root.find("files")
+    if files is None:
+        raise ValueError("Generated GP4 has no file list.")
+    count = 0
+    has_eboot = False
+    for entry in files.findall("file"):
+        target = (entry.get("targ_path") or "").replace("\\", "/").strip()
+        if (not target or target.startswith("/") or
+                re.match(r"^[A-Za-z]:", target) or
+                any(part in ("", ".", "..") for part in target.rstrip("/").split("/"))):
+            raise ValueError("Unsafe GP4 target: " + target)
+        candidate = (game / Path(*target.rstrip("/").split("/"))).resolve()
+        if not candidate.is_relative_to(game) or not candidate.exists():
+            raise ValueError("Missing or escaping GP4 source: " + target)
+        if target.lower() == "eboot.bin":
+            has_eboot = candidate.is_file()
+        entry.set("orig_path", str(candidate))
+        count += 1
+    if not has_eboot:
+        raise ValueError("Generated GP4 omits eboot.bin.")
+    tree.write(gp4, encoding="utf-8", xml_declaration=True)
+    return count
 
 
 class ConversionCancelled(RuntimeError):
@@ -61,14 +125,14 @@ def find_ps4_game_root(folder: str | Path) -> Path:
     return root
 
 
-def run_live_command(args: list[str], log=None, cancel: threading.Event | None = None):
+def run_live_command(args: list[str], log=None, cancel: threading.Event | None = None, cwd=None):
     """Run a subprocess without a shell; consume both streams without pipe deadlock."""
     if log:
         log("Running: " + " ".join(Path(a).name if idx == 0 else str(a) for idx, a in enumerate(args)))
     creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     process = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                encoding="utf-8", errors="replace", text=True,
-                               creationflags=creationflags)
+                               cwd=cwd, creationflags=creationflags)
     lines = queue.Queue()
     def reader():
         try:
@@ -109,11 +173,11 @@ def run_live_command(args: list[str], log=None, cancel: threading.Event | None =
 
 def convert_ffpfsc_to_ps4_pkg(
     source: str | Path, destination: str | Path, temp_dir: str | Path,
-    mkpfs_prefix: list[str], pkg_builder: str | Path,
+    mkpfs_prefix: list[str], orbis_cmd: str | Path,
     log=None, cancel: threading.Event | None = None,
-    command_runner=None,
+    command_runner=None, gp4_generator: str | Path | None = None,
 ) -> Path:
-    """Unpack -> validate PS4 -> generate GP4 -> build and validate PKG.
+    """Unpack -> validate PS4 -> prepare GP4 -> build via local Orbis CLI.
 
     Source image is read-only; the destination never gets a partial PKG.
     Staging remains after a failure for diagnostics and safe retry.
@@ -121,9 +185,10 @@ def convert_ffpfsc_to_ps4_pkg(
     image = inspect_ffpfsc(source)
     dest = Path(destination).resolve()
     temp = Path(temp_dir).resolve()
-    builder = Path(pkg_builder).resolve()
-    if not builder.is_file():
-        raise ValueError("OrbisPkgTool.exe is missing. Please install/select the PS4 PKG builder.")
+    orbis = validate_orbis_pub_cmd(orbis_cmd)
+    generator = Path(gp4_generator).resolve() if gp4_generator is not None else None
+    if generator is None or not generator.is_file():
+        raise ValueError("The bundled OrbisPkgTool GP4 generator is unavailable.")
     if not mkpfs_prefix:
         raise ValueError("MkPFS is unavailable.")
     if dest.suffix.lower() != ".pkg" or dest == image:
@@ -140,11 +205,14 @@ def convert_ffpfsc_to_ps4_pkg(
         raise OSError("Insufficient TEMP space: free space is smaller than the source image.")
     if shutil.disk_usage(dest.parent).free < minimum_free:
         raise OSError("Insufficient output space: at least the source-image size must be free.")
-    invoke = command_runner or (lambda cmd: run_live_command(cmd, log=log, cancel=cancel))
+    def invoke(cmd, cwd=None):
+        if command_runner is not None:
+            return command_runner(cmd)
+        return run_live_command(cmd, log=log, cancel=cancel, cwd=cwd)
     stage = Path(tempfile.mkdtemp(prefix="ffpfsc_ps4_pkg_", dir=temp))
     extracted = stage / "game"
     gp4 = stage / "project.gp4"
-    provisional = stage / "package.pkg"
+    output_folder = stage / "orbis_output"
     success = False
     try:
         if cancel is not None and cancel.is_set():
@@ -162,16 +230,25 @@ def convert_ffpfsc_to_ps4_pkg(
             shadowmount_json.unlink()
         if log:
             log("Stage 2/3: generating the PS4 GP4 project.")
-        invoke([str(builder), "gp4gen", str(game), "--strict-gengp4", "--out", str(gp4)])
+        invoke([str(generator), "gp4gen", str(game), "--strict-gengp4", "--out", str(gp4)])
         if not gp4.is_file():
             raise RuntimeError("GP4 project generation did not create a file.")
+        count = prepare_gp4_for_orbis(gp4, game)
+        if log:
+            log(f"GP4 ready: {count} staged source paths mapped for Orbis Publisher Tools.")
         if cancel is not None and cancel.is_set():
             raise ConversionCancelled("Conversion cancelled.")
+        output_folder.mkdir()
         if log:
-            log("Stage 3/3: building and validating the PS4 fake PKG.")
-        invoke([str(builder), "build", str(gp4), str(game), "--out", str(provisional), "--validate"])
-        if not provisional.is_file() or provisional.stat().st_size < 1024:
-            raise RuntimeError("The PKG builder did not produce a valid-sized file.")
+            log("Stage 3/3: building PKG with installed Orbis Publisher Tools.")
+        invoke([str(orbis), "img_create", "--oformat", "pkg", str(gp4), str(output_folder)],
+               cwd=str(orbis.parent))
+        packages = list(output_folder.glob("*.pkg"))
+        if len(packages) != 1:
+            raise RuntimeError(f"Orbis CLI should generate exactly one PKG, found {len(packages)}.")
+        provisional = packages[0]
+        if provisional.stat().st_size < 1024:
+            raise RuntimeError("Orbis generated an empty or truncated PKG.")
         with provisional.open("rb") as handle:
             if handle.read(4) != PKG_MAGIC:
                 raise RuntimeError("The built file has no PS4 PKG header.")
@@ -194,7 +271,7 @@ def convert_ffpfsc_to_ps4_pkg(
                 partial.unlink()
         success = True
         if log:
-            log("PS4 PKG created: " + str(dest))
+            log("PS4 PKG created by Orbis Publisher Tools: " + str(dest))
         return dest
     except Exception:
         if log:
