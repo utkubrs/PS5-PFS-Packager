@@ -7,7 +7,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from ffpfsc_to_pkg import (inspect_ffpfsc, find_ps4_game_root,
-                           convert_ffpfsc_to_ps4_pkg, prepare_gp4_for_orbis,\n                           validate_orbis_pub_cmd, PKG_MAGIC)
+                           convert_ffpfsc_to_ps4_pkg, prepare_gp4_for_orbis,
+                           validate_orbis_pub_cmd, PKG_MAGIC)
 from test_ps4_merge import make_sfo
 
 
@@ -59,9 +60,19 @@ class FfpfscToPkgTest(unittest.TestCase):
                     make_sfo(game / "sce_sys" / "param.sfo")
                     (game / "sce_sys" / "param.json").write_text('{"shadowmount":true}')
                 elif cmd[1] == "gp4gen":
-                    Path(cmd[-1]).write_text("<gp4/>")
-                elif cmd[1] == "build":
-                    Path(cmd[cmd.index("--out") + 1]).write_bytes(PKG_MAGIC + b"\0" * 2048)
+                    Path(cmd[-1]).write_text(
+                        '<psproject><volume><volume_type>pkg_ps4_app</volume_type>'
+                        '<package content_id="TEST"/></volume><files>'
+                        '<file targ_path="eboot.bin" orig_path="eboot.bin"/>'
+                        '<file targ_path="sce_sys/param.sfo" orig_path="sce_sys/param.sfo"/>'
+                        '</files></psproject>', encoding="utf-8")
+                elif cmd[1] == "img_create":
+                    import xml.etree.ElementTree as ET
+                    gp4 = ET.parse(cmd[-2]).getroot()
+                    for element in gp4.findall("files/file"):
+                        self.assertTrue(Path(element.get("orig_path")).exists())
+                    outdir = Path(cmd[-1])
+                    (outdir / "UP0000-TEST.pkg").write_bytes(PKG_MAGIC + b"\0" * 2048)
             pkg = output / "game.pkg"
             result = convert_ffpfsc_to_ps4_pkg(source, pkg, temp,
                                                ["mkpfs"], exe, command_runner=run,
